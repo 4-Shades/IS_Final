@@ -67,6 +67,5 @@ ADK_Demo/
 ├── shared/                 # Shared data schemas
 ├── run.py                  # Script to start all agents
 ├── travel_ui.py            # Streamlit frontend application
-├── Software_Design_Document.md
 └── README.md
 ```
