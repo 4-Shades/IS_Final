@@ -1,0 +1,157 @@
+name: travel-planner
+
+x-api-service: &api-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: api-runtime
+  restart: unless-stopped
+  environment:
+    LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+    OPEN_TRAVEL_DATA_ENABLED: ${OPEN_TRAVEL_DATA_ENABLED:-false}
+    WEATHER_PROVIDER_ENABLED: ${WEATHER_PROVIDER_ENABLED:-false}
+    PLACES_PROVIDER_ENABLED: ${PLACES_PROVIDER_ENABLED:-false}
+    GROUND_TRANSPORT_ENABLED: ${GROUND_TRANSPORT_ENABLED:-false}
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+    OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-all-minilm}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
+    DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+  networks:
+    - backend
+
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ui-runtime
+    restart: unless-stopped
+    environment:
+      HOST_SERVICE_URL: http://host:8000
+    depends_on:
+      host:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  host:
+    <<: *api-service
+    environment:
+      APP_MODULE: agents.host_agent.__main__
+      PORT: 8000
+      FLIGHT_SERVICE_URL: http://flight:8001
+      STAY_SERVICE_URL: http://stay:8002
+      ACTIVITIES_SERVICE_URL: http://activities:8003
+    depends_on:
+      flight:
+        condition: service_healthy
+      stay:
+        condition: service_healthy
+      activities:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    command: ["serve"]
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  flight:
+    <<: *api-service
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_MODULE: agents.flight_agent.__main__
+      PORT: 8001
+      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  stay:
+    <<: *api-service
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_MODULE: agents.stay_agent.__main__
+      PORT: 8002
+      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  activities:
+    <<: *api-service
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_MODULE: agents.activities_agent.__main__
+      PORT: 8003
+      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: ["data"]
+    environment:
+      POSTGRES_DB: travel_planner
+      POSTGRES_USER: travel_planner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replace-with-a-local-development-password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  redis:
+    image: redis:7.4-alpine
+    profiles: ["data"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  ollama-data:
+  postgres-data:
+  redis-data:

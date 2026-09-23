@@ -1,0 +1,6 @@
+# Runtime dependencies for the FastAPI specialist and host services
+fastapi==0.115.12
+httpx==0.28.1
+pydantic==2.11.5
+python-dotenv==1.1.0
+uvicorn[standard]==0.34.3

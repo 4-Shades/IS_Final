@@ -1,24 +1,35 @@
-import httpx
-import json
+"""Resilient HTTP client used for host-to-specialist calls."""
 
-async def call_agent(url, payload):
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, json=payload, timeout=60.0)
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+async def call_agent(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    request_id: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Return a machine-readable error instead of failing the whole trip plan."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+            response = await client.post(
+                f"{url.rstrip('/')}/run",
+                json=payload,
+                headers={"X-Request-ID": request_id},
+            )
             response.raise_for_status()
-            
-            # Try to parse JSON
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                # If response is not JSON (e.g. plain string), return it as is
-                # This prevents "Expecting value: line 1 column 1" crashes
-                print(f"Warning: Agent at {url} returned non-JSON: {response.text[:100]}...")
-                return response.text
-                
-        except httpx.HTTPStatusError as e:
-            print(f"HTTP Error calling {url}: {e}")
-            return {}
-        except Exception as e:
-            print(f"Error calling {url}: {e}")
-            return {}
+            body = response.json()
+            if not isinstance(body, dict):
+                raise ValueError("agent response must be a JSON object")
+            return body
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("agent_call_failed url=%s request_id=%s error=%s", url, request_id, exc)
+        return {"error": "Service is temporarily unavailable."}

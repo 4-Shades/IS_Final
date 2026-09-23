@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.env
+.env.*
+!.env.example
+.pytest_cache
+.ruff_cache
+tests
+MIGRATION_PLAN.md
+README.md
+run.py

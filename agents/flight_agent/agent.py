@@ -1,51 +1,29 @@
-from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+import logging
 
-flight_agent = Agent(
-    name="flight_agent",
-    model=LiteLlm("openai/gpt-4o"),
-    description="Suggests flight options for a destination.",
-    instruction=(
-        "Given a destination, travel dates, and budget, suggest 1-2 realistic flight options. "
-        "Include airline name, price, and departure time. Ensure flights fit within the budget."
+from common.llm import LLMError, get_llm_client
+from common.rag import get_rag_index
+from shared.schemas import FlightResponse, TravelRequest
+
+logger = logging.getLogger(__name__)
+
+
+async def execute(request: TravelRequest) -> FlightResponse:
+    rag_prompt, _ = get_rag_index().augment_prompt(
+        (
+            f"Suggest 2-3 non-live, illustrative flights from {request.origin} to {request.destination} "
+            f"from {request.start_date} to {request.end_date} for {request.travellers} traveller(s), "
+            f"within {request.budget} {request.currency}."
+        ),
+        destination=request.destination,
     )
-)
-
-session_service = InMemorySessionService()
-runner = Runner(
-    agent=flight_agent,
-    app_name="flight_app",
-    session_service=session_service
-)
-
-USER_ID = "user_1"
-SESSION_ID = "session_001"
-
-async def execute(request):
-    # 🔧 Ensure session is created before running the agent
-    await session_service.create_session(
-        app_name="flight_app",
-        user_id=USER_ID,
-        session_id=SESSION_ID
-    )
-
-    # prompt = (
-    #     f"User is flying to {request['destination']} from {request['start_date']} to {request['end_date']}, "
-    #     f"with a budget of {request['budget']}. Suggest flight options."
-    # )
     prompt = (
-    f"User is flying from {request['origin']} to {request['destination']} "
-    f"from {request['start_date']} to {request['end_date']}, with a budget of {request['budget']}. "
-    "Suggest 2-3 realistic flight options. For each option, include airline, departure time, return time, "
-    "price, and mention if it's direct or has layovers."
+        f"{rag_prompt} Use this exact response structure: "
+        '{"flights":[{"airline":"string","departure_time":"ISO-8601 or clear local time",'
+        '"return_time":"ISO-8601 or clear local time","price":0,"currency":"USD",'
+        '"stops":0,"booking_url":null}]}. Do not claim options are live or bookable.'
     )
-
-
-    message = types.Content(role="user", parts=[types.Part(text=prompt)])
-
-    async for event in runner.run_async(user_id=USER_ID, session_id=SESSION_ID, new_message=message):
-        if event.is_final_response():
-            return {"flights": event.content.parts[0].text}
+    try:
+        return await get_llm_client().generate_structured(prompt, FlightResponse)
+    except LLMError as exc:
+        logger.warning("flight_generation_failed request_id=%s error=%s", request.request_id, exc)
+        return FlightResponse(error="Flight planner is temporarily unavailable.")

@@ -1,43 +1,32 @@
-from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+import logging
 
-stay_agent = Agent(
-    name="stay_agent",
-    model=LiteLlm("openai/gpt-4o"),
-    description="Suggests hotel or stay options for a destination.",
-    instruction=(
-        "Given a destination, travel dates, and budget, suggest 2-3 hotel or stay options. "
-        "Include hotel name, price per night, and location. Ensure suggestions are within budget."
-    )
+from common.llm import LLMError, get_llm_client
+from common.rag import get_rag_index
+from shared.schemas import StayResponse, TravelRequest
+
+logger = logging.getLogger(__name__)
+
+STAY_RESPONSE_FORMAT = (
+    '{"stays":[{"name":"string","location":"string",'
+    '"price_per_night":0,"currency":"USD","booking_url":null}]}'
 )
 
-session_service = InMemorySessionService()
-runner = Runner(
-    agent=stay_agent,
-    app_name="stay_app",
-    session_service=session_service
-)
 
-USER_ID = "user_stay"
-SESSION_ID = "session_stay"
-
-async def execute(request):
-    await session_service.create_session(
-        app_name="stay_app",
-        user_id=USER_ID,
-        session_id=SESSION_ID
+async def execute(request: TravelRequest) -> StayResponse:
+    request_prompt = (
+        f"Suggest 2-3 non-live, illustrative accommodation options in {request.destination} from "
+        f"{request.start_date} to {request.end_date} within {request.budget} {request.currency}."
     )
-
+    rag_prompt, _ = get_rag_index().augment_prompt(
+        request_prompt,
+        destination=request.destination,
+    )
     prompt = (
-        f"User is staying in {request['destination']} from {request['start_date']} to {request['end_date']} "
-        f"with a budget of {request['budget']}. Suggest stay options."
+        f"{rag_prompt} Use this exact response structure: {STAY_RESPONSE_FORMAT}. "
+        "Do not claim options are live or bookable."
     )
-
-    message = types.Content(role="user", parts=[types.Part(text=prompt)])
-
-    async for event in runner.run_async(user_id=USER_ID, session_id=SESSION_ID, new_message=message):
-        if event.is_final_response():
-            return {"stays": event.content.parts[0].text}
+    try:
+        return await get_llm_client().generate_structured(prompt, StayResponse)
+    except LLMError as exc:
+        logger.warning("stay_generation_failed request_id=%s error=%s", request.request_id, exc)
+        return StayResponse(error="Stay planner is temporarily unavailable.")

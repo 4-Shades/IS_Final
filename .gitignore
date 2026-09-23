@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments and packaging output
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other files
+OLLAMA_OPEN_TRAVEL_PLAN.md
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and local runtime output
+*.log
+*.pid
+*.seed
+
+# Local Docker, database, cache, and model data
+ollama-data/
+postgres-data/
+redis-data/
+docker-data/
+model-cache/
+
+# Test and local tool output
+test-results/
+reports/
