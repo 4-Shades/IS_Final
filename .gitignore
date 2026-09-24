@@ -33,6 +33,7 @@ dist/
 
 # Other files
 OLLAMA_OPEN_TRAVEL_PLAN.md
+railway.toml
 
 # Operating-system files
 .DS_Store
