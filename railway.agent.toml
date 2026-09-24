@@ -1,0 +1,20 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.agent"
+buildEnvironment = "V3"
+
+[deploy]
+runtime = "V2"
+numReplicas = 1
+startCommand = "python -m common.serve"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 100
+sleepApplication = false
+useLegacyStacker = false
+ipv6EgressEnabled = false
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[env]
+APP_MODULE = "agents.host_agent.__main__"
+PORT = "8000"
