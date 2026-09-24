@@ -87,6 +87,22 @@ streamlit run travel_ui.py
 
 The UI is available at `http://localhost:8501`.
 
+### Streamlit Community Cloud
+
+Streamlit Community Cloud can host `travel_ui.py`, but it cannot host Ollama or the FastAPI agent processes. Deploy the repository from GitHub with these settings:
+
+- **Main file path:** `travel_ui.py`
+- **Python version:** 3.11
+- **Requirements:** `requirements.txt` in the repository root
+
+In the app's Streamlit Cloud settings, add this secret:
+
+```toml
+HOST_SERVICE_URL = "https://your-public-host-api.example.com"
+```
+
+The host API and all specialist agents must be deployed separately on a Docker-capable service, with Ollama reachable by the host API. Do not use `localhost` for `HOST_SERVICE_URL` in the cloud app.
+
 ### Docker Compose
 
 Copy `.env.example` to `.env`, then start the service stack with a private Ollama-backed backend:

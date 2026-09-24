@@ -6,7 +6,15 @@ import streamlit as st
 from shared.config import get_settings
 
 
-def _show_offers(title: str,offers: list[dict] | None) -> None:
+def _host_service_url() -> str:
+    try:
+        configured_url = st.secrets.get("HOST_SERVICE_URL")
+    except (FileNotFoundError, KeyError):
+        configured_url = None
+    return (configured_url or get_settings().host_service_url).rstrip("/")
+
+
+def _show_offers(title: str, offers: list[dict] | None) -> None:
     if not offers:
         st.info(f"No {title.lower()} suggestions were returned.")
         return
@@ -43,7 +51,7 @@ if st.button("Plan My Trip ✨"):
         }
         try:
             response = requests.post(
-                f"{get_settings().host_service_url}/run",
+                f"{_host_service_url()}/run",
                 json=payload,
                 timeout=35,
             )
