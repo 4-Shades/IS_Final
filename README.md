@@ -177,12 +177,12 @@ Deploy the flight, stay, and activities agents as three separate Railway service
 For each service, use these settings:
 
 - **Runtime:** Docker
-- **Dockerfile path:** `./Dockerfile`
+- **Dockerfile path:** `./Dockerfile.agent`
 - **Docker context:** `.`
 - **Start command:** `python -m common.serve`
 - **Health check path:** `/healthz`
 
-Because `railway.toml` is configured for the Ollama service, explicitly set `Dockerfile` in each specialist service's Railway build settings. Do not use `Dockerfile.ollama` for these services.
+Use `Dockerfile.agent` instead of `Dockerfile.ollama` for these services. This dedicated image includes Python and the API dependencies, so it is not affected by the repository's Ollama-specific `railway.toml` configuration.
 
 Configure the services as follows:
 
@@ -269,6 +269,7 @@ IS_Final/
 ├── tests/                  # Contract and provider tests
 ├── Dockerfile              # Split multi-stage API/UI Docker image build
 ├── Dockerfile.ollama       # Render Ollama service image
+├── Dockerfile.agent        # Railway FastAPI agent image
 ├── railway.toml             # Railway Ollama deployment configuration
 ├── requirements.api.txt    # FastAPI runtime dependencies
 ├── requirements.ui.txt     # Streamlit runtime dependencies
