@@ -129,6 +129,25 @@ To start the optional local PostgreSQL and Redis services, set `POSTGRES_PASSWOR
 docker compose --profile ollama --profile data up --build
 ```
 
+### Render Ollama service
+
+Deploy Ollama as a separate private Render service before deploying the FastAPI agents:
+
+- **Runtime:** Docker
+- **Dockerfile path:** `./Dockerfile.ollama`
+- **Docker context:** `.`
+- **Port:** `11434`
+- **Persistent disk mount:** `/root/.ollama`
+
+After the service starts, open its Render shell and download the models used by the agents:
+
+```bash
+ollama pull llama3.2:3b
+ollama pull embeddinggemma
+```
+
+Set the FastAPI services' `OLLAMA_BASE_URL` to the Ollama service's private Render URL. Keep the Ollama service private; only the public host API should be exposed.
+
 ### Kubernetes Ollama deployment
 
 The manifest in `kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
@@ -188,6 +207,7 @@ IS_Final/
 ├── kubernetes/             # Kubernetes Ollama deployment
 ├── tests/                  # Contract and provider tests
 ├── Dockerfile              # Split multi-stage API/UI Docker image build
+├── Dockerfile.ollama       # Render Ollama service image
 ├── requirements.api.txt    # FastAPI runtime dependencies
 ├── requirements.ui.txt     # Streamlit runtime dependencies
 ├── compose.yaml            # Containerized service stack
