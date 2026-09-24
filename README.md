@@ -170,6 +170,45 @@ ollama pull embeddinggemma
 
 Use the Railway HTTPS domain as `OLLAMA_BASE_URL` in the FastAPI host. Do not expose an unauthenticated Ollama endpoint in production.
 
+### Railway specialist agent services
+
+Deploy the flight, stay, and activities agents as three separate Railway services. Each service uses the repository's API image and communicates with Ollama over Railway networking.
+
+For each service, use these settings:
+
+- **Runtime:** Docker
+- **Dockerfile path:** `./Dockerfile`
+- **Docker context:** `.`
+- **Start command:** `python -m common.serve`
+- **Health check path:** `/healthz`
+
+Because `railway.toml` is configured for the Ollama service, explicitly set `Dockerfile` in each specialist service's Railway build settings. Do not use `Dockerfile.ollama` for these services.
+
+Configure the services as follows:
+
+| Service | `APP_MODULE` | `PORT` |
+| --- | --- | --- |
+| `travel-flight` | `agents.flight_agent.__main__` | `8001` |
+| `travel-stay` | `agents.stay_agent.__main__` | `8002` |
+| `travel-activities` | `agents.activities_agent.__main__` | `8003` |
+
+Add these variables to each specialist service:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://<ollama-private-domain>:11434
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_EMBEDDING_MODEL=embeddinggemma
+LLM_TIMEOUT_SECONDS=120
+DOWNSTREAM_TIMEOUT_SECONDS=150
+OPEN_TRAVEL_DATA_ENABLED=false
+WEATHER_PROVIDER_ENABLED=false
+PLACES_PROVIDER_ENABLED=false
+GROUND_TRANSPORT_ENABLED=false
+```
+
+Replace `<ollama-private-domain>` with the Ollama service's Railway private hostname. Keep these specialist services private. After they are healthy, set the FastAPI host's `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, and `ACTIVITIES_SERVICE_URL` to their private Railway URLs.
+
 ### Kubernetes Ollama deployment
 
 The manifest in `kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
