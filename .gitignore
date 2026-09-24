@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 *.local
+.dockerignore
 
 # Python bytecode and caches
 __pycache__/
