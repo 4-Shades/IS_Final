@@ -148,6 +148,28 @@ ollama pull embeddinggemma
 
 Set the FastAPI services' `OLLAMA_BASE_URL` to the Ollama service's private Render URL. Keep the Ollama service private; only the public host API should be exposed.
 
+### Railway Ollama service
+
+Railway can host the Ollama service using `Dockerfile.ollama`. The repository includes `railway.toml` so Railway uses the correct Dockerfile, port, start command, and health endpoint.
+
+Create a Railway service from this repository with these settings:
+
+- **Dockerfile:** `Dockerfile.ollama`
+- **Port:** `11434`
+- **Start command:** `ollama serve`
+- **Health check:** `/api/tags`
+
+Attach a Railway volume to the service at `/root/.ollama`. Without this volume, downloaded models are lost whenever the service is redeployed.
+
+After the service is running, use its shell to download the configured models:
+
+```bash
+ollama pull llama3.2:3b
+ollama pull embeddinggemma
+```
+
+Use the Railway HTTPS domain as `OLLAMA_BASE_URL` in the FastAPI host. Do not expose an unauthenticated Ollama endpoint in production.
+
 ### Kubernetes Ollama deployment
 
 The manifest in `kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
@@ -208,6 +230,7 @@ IS_Final/
 ├── tests/                  # Contract and provider tests
 ├── Dockerfile              # Split multi-stage API/UI Docker image build
 ├── Dockerfile.ollama       # Render Ollama service image
+├── railway.toml             # Railway Ollama deployment configuration
 ├── requirements.api.txt    # FastAPI runtime dependencies
 ├── requirements.ui.txt     # Streamlit runtime dependencies
 ├── compose.yaml            # Containerized service stack
