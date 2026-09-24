@@ -1,15 +1,40 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim
+# ------------------------------------------------------------------------------
+# Builder: API dependencies
+# ------------------------------------------------------------------------------
+FROM python:3.11-slim AS builder
 
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-WORKDIR /app
+WORKDIR /build
+
+RUN python -m venv "$VIRTUAL_ENV"
 
 COPY requirements.api.txt ./requirements.txt
-RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt
+
+
+# ------------------------------------------------------------------------------
+# Runtime: FastAPI agent service
+# ------------------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+COPY --from=builder "$VIRTUAL_ENV" "$VIRTUAL_ENV"
 
 COPY agents ./agents
 COPY common ./common
