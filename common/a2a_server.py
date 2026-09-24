@@ -16,6 +16,10 @@ Execute = Callable[[TravelRequest], Awaitable[object]]
 def create_app(*, service_name: str, execute: Execute) -> FastAPI:
     app = FastAPI(title=f"Travel Planner: {service_name}", version="0.1.0")
 
+    @app.get("/")
+    async def root() -> dict[str, str]:
+        return {"service": service_name, "status": "ok", "health": "/healthz"}
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "service": service_name}
