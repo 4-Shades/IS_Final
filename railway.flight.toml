@@ -1,0 +1,25 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.agent"
+buildEnvironment = "V3"
+
+[deploy]
+runtime = "V2"
+numReplicas = 1
+startCommand = "python -m common.serve"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 100
+sleepApplication = false
+useLegacyStacker = false
+ipv6EgressEnabled = false
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[env]
+APP_MODULE = "agents.flight_agent.__main__"
+PORT = "8001"
+LLM_PROVIDER = "ollama"
+OLLAMA_MODEL = "llama3.2:3b"
+OLLAMA_EMBEDDING_MODEL = "embeddinggemma"
+LLM_TIMEOUT_SECONDS = "120"
+DOWNSTREAM_TIMEOUT_SECONDS = "150"
