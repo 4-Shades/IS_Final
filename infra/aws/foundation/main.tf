@@ -60,26 +60,23 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.travel.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.public.id]
+
+  tags = {
+    Name = "${var.name_prefix}-s3"
+  }
+}
+
+# Rules live in separate resources: the ALB and ECS groups reference each other,
+# which inline blocks cannot express without a dependency cycle.
 resource "aws_security_group" "alb" {
   name        = "${var.name_prefix}-alb"
-  description = "Public ALB security group for the Host API"
+  description = "Public ALB for the Host API"
   vpc_id      = aws_vpc.travel.id
-
-  ingress {
-    description = "HTTP Host API validation traffic"
-    protocol    = "tcp"
-    from_port   = 80
-    to_port     = 80
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    description = "Allow ALB to reach the Host task"
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   tags = {
     Name = "${var.name_prefix}-alb"
@@ -88,20 +85,66 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "ecs" {
   name        = "${var.name_prefix}-ecs"
-  description = "Private ECS tasks for Host, Stay, and Activities"
+  description = "ECS tasks for Host, Stay, and Activities"
   vpc_id      = aws_vpc.travel.id
-
-  egress {
-    description = "Allow ECS tasks to reach Railway and AWS services"
-    protocol    = "-1"
-    from_port   = 0
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   tags = {
     Name = "${var.name_prefix}-ecs"
   }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  security_group_id = aws_security_group.alb.id
+  description       = "Public HTTP to the Host API; add HTTPS before production"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_host" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "ALB to the Host task"
+  ip_protocol                  = "tcp"
+  from_port                    = 8000
+  to_port                      = 8000
+  referenced_security_group_id = aws_security_group.ecs.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "host_from_alb" {
+  security_group_id            = aws_security_group.ecs.id
+  description                  = "Host API traffic from the ALB"
+  ip_protocol                  = "tcp"
+  from_port                    = 8000
+  to_port                      = 8000
+  referenced_security_group_id = aws_security_group.alb.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "agents_from_host" {
+  security_group_id            = aws_security_group.ecs.id
+  description                  = "Host to Stay and Activities"
+  ip_protocol                  = "tcp"
+  from_port                    = 8002
+  to_port                      = 8003
+  referenced_security_group_id = aws_security_group.ecs.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "host_to_agents" {
+  security_group_id            = aws_security_group.ecs.id
+  description                  = "Host to Stay and Activities"
+  ip_protocol                  = "tcp"
+  from_port                    = 8002
+  to_port                      = 8003
+  referenced_security_group_id = aws_security_group.ecs.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_https" {
+  security_group_id = aws_security_group.ecs.id
+  description       = "HTTPS to ECR, CloudWatch Logs, S3, and Railway"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 resource "aws_iam_role" "ecs_task_execution" {

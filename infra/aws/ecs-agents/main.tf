@@ -108,52 +108,15 @@ resource "aws_service_discovery_service" "agent" {
   }
 }
 
-resource "aws_security_group_rule" "host_to_agents" {
-  type                     = "ingress"
-  security_group_id        = var.ecs_security_group_id
-  source_security_group_id = var.host_security_group_id
-  from_port                = 8002
-  to_port                  = 8003
-  protocol                 = "tcp"
-  description              = "Allow the host service to call Stay and Activities"
-}
-
-resource "aws_security_group_rule" "ecs_host_to_agents" {
-  type                     = "ingress"
-  security_group_id        = var.ecs_security_group_id
-  source_security_group_id = var.ecs_security_group_id
-  from_port                = 8002
-  to_port                  = 8003
-  protocol                 = "tcp"
-  description              = "Allow the ECS Host task to call Stay and Activities"
-}
-
-resource "aws_security_group_rule" "alb_to_host" {
-  type                     = "ingress"
-  security_group_id        = var.ecs_security_group_id
-  source_security_group_id = var.alb_security_group_id
-  from_port                = 8000
-  to_port                  = 8000
-  protocol                 = "tcp"
-  description              = "Allow the public ALB to call the Host service"
-}
-
-resource "aws_security_group_rule" "public_http_to_alb" {
-  type              = "ingress"
-  security_group_id = var.alb_security_group_id
-  cidr_blocks       = ["0.0.0.0/0"]
-  from_port         = 80
-  to_port           = 80
-  protocol          = "tcp"
-  description       = "Public HTTP entry point for the Host API; put HTTPS in front before production"
-}
-
 resource "aws_lb" "host" {
   name               = "${var.name_prefix}-host"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
   subnets            = var.public_subnet_ids
+
+  # POST /run can wait up to DOWNSTREAM_TIMEOUT_SECONDS (150s) on the agents.
+  idle_timeout = 180
 }
 
 resource "aws_lb_target_group" "host" {
@@ -184,6 +147,11 @@ resource "aws_lb_listener" "host" {
 
 resource "aws_ecs_cluster" "agents" {
   name = "${var.name_prefix}-agents"
+}
+
+resource "aws_ecs_cluster_capacity_providers" "agents" {
+  cluster_name       = aws_ecs_cluster.agents.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 }
 
 resource "aws_ecs_task_definition" "agent" {
@@ -245,7 +213,11 @@ resource "aws_ecs_service" "agent" {
   cluster         = aws_ecs_cluster.agents.id
   task_definition = aws_ecs_task_definition.agent[each.key].arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+
+  capacity_provider_strategy {
+    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+  }
 
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
@@ -270,10 +242,63 @@ resource "aws_ecs_service" "agent" {
     }
   }
 
+  # The schedule below owns desired_count once the service exists.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   depends_on = [
-    aws_security_group_rule.host_to_agents,
-    aws_security_group_rule.ecs_host_to_agents,
-    aws_security_group_rule.alb_to_host,
-    aws_lb_listener.host
+    aws_lb_listener.host,
+    aws_ecs_cluster_capacity_providers.agents
   ]
+}
+
+resource "aws_appautoscaling_target" "agent" {
+  for_each = var.schedule_enabled ? local.agents : {}
+
+  service_namespace  = "ecs"
+  resource_id        = "service/${aws_ecs_cluster.agents.name}/${aws_ecs_service.agent[each.key].name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  min_capacity       = 0
+  max_capacity       = var.desired_count
+
+  # The scheduled actions rewrite these bounds every start and stop.
+  lifecycle {
+    ignore_changes = [min_capacity, max_capacity]
+  }
+}
+
+resource "aws_appautoscaling_scheduled_action" "start" {
+  for_each = aws_appautoscaling_target.agent
+
+  name               = "${var.name_prefix}-${each.key}-start"
+  service_namespace  = each.value.service_namespace
+  resource_id        = each.value.resource_id
+  scalable_dimension = each.value.scalable_dimension
+  schedule           = var.schedule_start_cron
+  timezone           = var.schedule_timezone
+
+  scalable_target_action {
+    min_capacity = var.desired_count
+    max_capacity = var.desired_count
+  }
+}
+
+# Scaling to zero stops the tasks, which releases their public IPv4 addresses.
+resource "aws_appautoscaling_scheduled_action" "stop" {
+  for_each = aws_appautoscaling_target.agent
+
+  name               = "${var.name_prefix}-${each.key}-stop"
+  service_namespace  = each.value.service_namespace
+  resource_id        = each.value.resource_id
+  scalable_dimension = each.value.scalable_dimension
+  schedule           = var.schedule_stop_cron
+  timezone           = var.schedule_timezone
+
+  scalable_target_action {
+    min_capacity = 0
+    max_capacity = 0
+  }
+
+  depends_on = [aws_appautoscaling_scheduled_action.start]
 }

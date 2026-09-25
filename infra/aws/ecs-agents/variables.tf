@@ -30,11 +30,6 @@ variable "ecs_security_group_id" {
   description = "Security group attached to the ECS tasks. It must allow egress to Ollama and required APIs."
 }
 
-variable "host_security_group_id" {
-  type        = string
-  description = "Security group used by the host Lambda or ECS service. It is allowed to call the agents."
-}
-
 variable "alb_security_group_id" {
   type        = string
   description = "Security group attached to the public Host Application Load Balancer."
@@ -79,6 +74,36 @@ variable "ollama_embedding_model" {
 variable "desired_count" {
   type    = number
   default = 1
+}
+
+variable "use_fargate_spot" {
+  type        = bool
+  description = "Run tasks on Fargate Spot (about 70% cheaper; AWS may interrupt tasks with a 2-minute warning)."
+  default     = true
+}
+
+variable "schedule_enabled" {
+  type        = bool
+  description = "Scale every service to zero outside the active window. Tasks and their public IPs only exist while running."
+  default     = true
+}
+
+variable "schedule_timezone" {
+  type        = string
+  description = "IANA time zone for the start and stop schedules."
+  default     = "Asia/Manila"
+}
+
+variable "schedule_start_cron" {
+  type        = string
+  description = "When services scale up to desired_count (Application Auto Scaling cron format)."
+  default     = "cron(0 8 * * ? *)"
+}
+
+variable "schedule_stop_cron" {
+  type        = string
+  description = "When services scale down to zero (Application Auto Scaling cron format)."
+  default     = "cron(0 22 * * ? *)"
 }
 
 variable "container_cpu" {

@@ -61,6 +61,14 @@ The public Host API URL is returned as `host_public_url`. The initial Terraform 
 - ECS Host task security group: allow outbound TCP 8002-8003 to the ECS task security group.
 - Tasks run in public subnets with `assign_public_ip = true` to pull images, send logs, and reach Railway. The ECS security group allows no inbound traffic from the internet.
 
+Security group rules are owned by `../foundation`; this module only attaches the groups.
+
+## Cost controls
+
+- `schedule_enabled` scales every service between `desired_count` (at `schedule_start_cron`) and zero (at `schedule_stop_cron`) in `schedule_timezone`. With no running tasks there are no task public IPv4 addresses or Fargate charges. The ALB and its public IPs keep billing; run `terraform destroy` here if the stack will sit idle for days.
+- `use_fargate_spot` runs tasks on Fargate Spot. AWS can reclaim a Spot task with two minutes' notice; ECS starts a replacement automatically.
+- To start the services outside the window, run `aws ecs update-service --cluster travel-agents --service <name> --desired-count 1 --region us-east-1`. The next scheduled stop scales them back down.
+
 ## Destroy
 
 ```bash
