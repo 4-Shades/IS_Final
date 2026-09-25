@@ -170,9 +170,9 @@ ollama pull embeddinggemma
 
 Use the Railway HTTPS domain as `OLLAMA_BASE_URL` in the FastAPI host. Do not expose an unauthenticated Ollama endpoint in production.
 
-### Railway specialist agent services
+### Railway Flight agent service
 
-Deploy the flight, stay, and activities agents as three separate Railway services. Each service uses the repository's API image and communicates with Ollama over Railway networking.
+The Flight agent remains on Railway. Stay and Activities are deployed to AWS ECS Fargate using the Terraform module described below. If you temporarily deploy all specialist agents on Railway, each service uses the repository's API image and communicates with Ollama over Railway networking.
 
 For each service, use these settings:
 
@@ -189,8 +189,6 @@ Configure the services as follows:
 | Service | `APP_MODULE` | `PORT` |
 | --- | --- | --- |
 | `travel-flight` | `agents.flight_agent.__main__` | `8001` |
-| `travel-stay` | `agents.stay_agent.__main__` | `8002` |
-| `travel-activities` | `agents.activities_agent.__main__` | `8003` |
 
 Add these variables to each specialist service:
 
@@ -207,7 +205,23 @@ PLACES_PROVIDER_ENABLED=false
 GROUND_TRANSPORT_ENABLED=false
 ```
 
-Replace `<ollama-private-domain>` with the Ollama service's Railway private hostname. Keep these specialist services private. After they are healthy, set the FastAPI host's `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, and `ACTIVITIES_SERVICE_URL` to their private Railway URLs.
+Replace `<ollama-private-domain>` with the Ollama service's Railway private hostname. Keep the Flight service private. The ECS services use the same Ollama variables through Terraform. After all services are healthy, set the FastAPI host's `FLIGHT_SERVICE_URL` to the Railway Flight URL and use the ECS Cloud Map outputs for `STAY_SERVICE_URL` and `ACTIVITIES_SERVICE_URL`.
+
+### AWS ECS Stay and Activities services
+
+The Terraform module in `infra/aws/ecs-agents` deploys the Stay and Activities services to ECS Fargate using `Dockerfile.agent`. It creates separate task definitions, ECR repositories, CloudWatch log groups, and private Cloud Map DNS names:
+
+- `http://stay.travel.internal:8002`
+- `http://activities.travel.internal:8003`
+
+The host must run inside the same VPC, such as an AWS Lambda function configured for that VPC or an ECS service. Configure the host with the Terraform outputs:
+
+```env
+STAY_SERVICE_URL=http://stay.travel.internal:8002
+ACTIVITIES_SERVICE_URL=http://activities.travel.internal:8003
+```
+
+See [`infra/aws/ecs-agents/README.md`](infra/aws/ecs-agents/README.md) for prerequisites, ECR image publishing, network rules, and deployment commands. Keep `OLLAMA_BASE_URL` pointed at the existing Railway Ollama service.
 
 ### Kubernetes Ollama deployment
 
@@ -265,11 +279,12 @@ IS_Final/
 │   └── stay_agent/
 ├── common/                 # LLM, RAG, provider, and communication utilities
 ├── shared/                 # Shared data schemas
+├── infra/aws/ecs-agents/   # Terraform for Stay and Activities on ECS
 ├── kubernetes/             # Kubernetes Ollama deployment
 ├── tests/                  # Contract and provider tests
-├── Dockerfile              # Split multi-stage API/UI Docker image build
-├── Dockerfile.ollama       # Render Ollama service image
-├── Dockerfile.agent        # Railway FastAPI agent image
+├── Dockerfile              # Split multi-stage local API/UI image build
+├── Dockerfile.ollama       # Railway Ollama service image
+├── Dockerfile.agent        # Railway/ECS FastAPI agent image
 ├── railway.toml             # Railway Ollama deployment configuration
 ├── requirements.api.txt    # FastAPI runtime dependencies
 ├── requirements.ui.txt     # Streamlit runtime dependencies

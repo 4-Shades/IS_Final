@@ -64,7 +64,8 @@ RUN groupadd --system app \
 # ------------------------------------------------------------------------------
 FROM runtime-base AS api-runtime
 
-ENV PORT=8000
+ENV APP_MODULE=agents.host_agent.__main__ \
+    PORT=8000
 
 COPY --from=api-builder "$VIRTUAL_ENV" "$VIRTUAL_ENV"
 COPY --chown=app:app agents ./agents
@@ -74,6 +75,9 @@ COPY --chown=app:app shared ./shared
 USER app
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/healthz')" || exit 1
 
 CMD ["python", "-m", "common.serve"]
 

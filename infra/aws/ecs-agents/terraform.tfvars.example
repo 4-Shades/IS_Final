@@ -1,0 +1,13 @@
+aws_region            = "us-east-1"
+name_prefix            = "travel"
+vpc_id                 = "vpc-xxxxxxxx"
+task_subnet_ids        = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+ecs_security_group_id  = "sg-xxxxxxxx"
+host_security_group_id = "sg-yyyyyyyy"
+execution_role_arn     = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+task_role_arn          = "arn:aws:iam::123456789012:role/travelAgentTaskRole"
+image_tag              = "2026-09-25-001"
+ollama_base_url        = "https://your-railway-ollama-domain"
+ollama_model           = "llama3.2:3b"
+ollama_embedding_model = "embeddinggemma"
+desired_count          = 1

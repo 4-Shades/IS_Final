@@ -10,6 +10,7 @@ FROM ollama/ollama:latest AS ollama-base
 FROM ollama-base AS runtime
 
 ENV OLLAMA_HOST=0.0.0.0:11434
+ENV OLLAMA_KEEP_ALIVE=10m
 
 EXPOSE 11434
 
