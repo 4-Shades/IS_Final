@@ -20,6 +20,11 @@ variable "task_subnet_ids" {
   description = "Private subnet IDs for the ECS tasks."
 }
 
+variable "public_subnet_ids" {
+  type        = list(string)
+  description = "Public subnet IDs for the public Host Application Load Balancer."
+}
+
 variable "ecs_security_group_id" {
   type        = string
   description = "Security group attached to the ECS tasks. It must allow egress to Ollama and required APIs."
@@ -28,6 +33,11 @@ variable "ecs_security_group_id" {
 variable "host_security_group_id" {
   type        = string
   description = "Security group used by the host Lambda or ECS service. It is allowed to call the agents."
+}
+
+variable "alb_security_group_id" {
+  type        = string
+  description = "Security group attached to the public Host Application Load Balancer."
 }
 
 variable "execution_role_arn" {
@@ -49,6 +59,11 @@ variable "image_tag" {
 variable "ollama_base_url" {
   type        = string
   description = "Private or authenticated Ollama URL reachable from the ECS task subnets."
+}
+
+variable "flight_service_url" {
+  type        = string
+  description = "HTTPS URL of the existing Railway Flight agent."
 }
 
 variable "ollama_model" {

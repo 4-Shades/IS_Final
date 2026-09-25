@@ -1,6 +1,6 @@
 # AWS ECS specialist agents
 
-This module deploys the Stay and Activities FastAPI services to ECS Fargate using `Dockerfile.agent`.
+This module deploys the Host, Stay, and Activities FastAPI services to ECS Fargate using `Dockerfile.agent`. The Host is exposed through an internet-facing HTTP Application Load Balancer; Stay and Activities remain private through AWS Cloud Map. Create the AWS foundation module first; this module reads its existing ECR repositories, VPC, subnets, security groups, and IAM role outputs.
 
 ## Prerequisites
 
@@ -11,6 +11,8 @@ This module deploys the Stay and Activities FastAPI services to ECS Fargate usin
 - An ECS task role for the application
 - Security groups for the host and ECS tasks
 - Network egress from the task subnets to the Railway Ollama endpoint
+- Public subnets for the Host Application Load Balancer
+- An ALB security group allowing inbound TCP 80
 
 The host must be able to resolve and reach the private Cloud Map namespace. If the host runs in Lambda, attach it to the same VPC and configure its security group and DNS support accordingly.
 
@@ -22,7 +24,7 @@ terraform init
 terraform apply -var-file=terraform.tfvars
 ```
 
-Build and push one image for each repository shown by Terraform:
+Build and push the agent image to each repository shown by Terraform:
 
 ```bash
 docker build -f ../../../Dockerfile.agent -t travel-stay-agent:latest ../../../
@@ -31,6 +33,9 @@ docker push <stay-ecr-repository-url>:<image-tag>
 
 docker tag travel-stay-agent:latest <activities-ecr-repository-url>:<image-tag>
 docker push <activities-ecr-repository-url>:<image-tag>
+
+docker tag travel-stay-agent:latest <host-ecr-repository-url>:<image-tag>
+docker push <host-ecr-repository-url>:<image-tag>
 ```
 
 Set `image_tag` to the pushed tag before applying. The same image is used for both services; `APP_MODULE` selects the service at runtime.
@@ -42,15 +47,18 @@ Use the Terraform outputs in the host service:
 ```env
 STAY_SERVICE_URL=http://stay.travel.internal:8002
 ACTIVITIES_SERVICE_URL=http://activities.travel.internal:8003
+FLIGHT_SERVICE_URL=https://<railway-flight-domain>
+OLLAMA_BASE_URL=https://<railway-ollama-domain>
 ```
 
-Keep `OLLAMA_BASE_URL` set to the Railway Ollama endpoint. Do not expose the Cloud Map names publicly.
+The public Host API URL is returned as `host_public_url`. The initial Terraform listener is HTTP for validation only; add an ACM certificate and HTTPS listener before production use. Do not expose the Cloud Map names publicly.
 
 ## Network requirements
 
 - ECS task security group: allow outbound TCP 443 to the Railway Ollama endpoint and required APIs.
 - ECS task security group: allow inbound TCP 8002-8003 from the host security group only.
 - Host Lambda security group: allow outbound TCP 8002-8003 to the ECS task security group.
+- ECS Host task security group: allow outbound TCP 8002-8003 to the ECS task security group.
 - Private subnets need NAT or suitable VPC endpoints to pull images and send logs.
 
 ## Destroy
@@ -59,4 +67,4 @@ Keep `OLLAMA_BASE_URL` set to the Railway Ollama endpoint. Do not expose the Clo
 terraform destroy -var-file=terraform.tfvars
 ```
 
-ECR repositories are protected from accidental deletion with `force_delete = false`.
+ECR repositories are created and protected by `../foundation`; the ECS module only reads them.

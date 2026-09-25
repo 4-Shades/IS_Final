@@ -207,14 +207,14 @@ GROUND_TRANSPORT_ENABLED=false
 
 Replace `<ollama-private-domain>` with the Ollama service's Railway private hostname. Keep the Flight service private. The ECS services use the same Ollama variables through Terraform. After all services are healthy, set the FastAPI host's `FLIGHT_SERVICE_URL` to the Railway Flight URL and use the ECS Cloud Map outputs for `STAY_SERVICE_URL` and `ACTIVITIES_SERVICE_URL`.
 
-### AWS ECS Stay and Activities services
+### AWS ECS Host, Stay, and Activities services
 
-The Terraform module in `infra/aws/ecs-agents` deploys the Stay and Activities services to ECS Fargate using `Dockerfile.agent`. It creates separate task definitions, ECR repositories, CloudWatch log groups, and private Cloud Map DNS names:
+The Terraform module in `infra/aws/ecs-agents` deploys the Host, Stay, and Activities services to ECS Fargate using `Dockerfile.agent`. The Host is exposed through an Application Load Balancer, while Stay and Activities use private Cloud Map DNS names:
 
 - `http://stay.travel.internal:8002`
 - `http://activities.travel.internal:8003`
 
-The host must run inside the same VPC, such as an AWS Lambda function configured for that VPC or an ECS service. Configure the host with the Terraform outputs:
+The Host task calls the existing Railway Flight and Ollama services over their HTTPS URLs. The public Host API URL is returned as the `host_public_url` Terraform output. Configure the Host task with:
 
 ```env
 STAY_SERVICE_URL=http://stay.travel.internal:8002
@@ -279,7 +279,8 @@ IS_Final/
 │   └── stay_agent/
 ├── common/                 # LLM, RAG, provider, and communication utilities
 ├── shared/                 # Shared data schemas
-├── infra/aws/ecs-agents/   # Terraform for Stay and Activities on ECS
+├── infra/aws/foundation/   # Terraform for VPC, IAM, security groups, and ECR
+├── infra/aws/ecs-agents/   # Terraform for Host, Stay, and Activities on ECS
 ├── kubernetes/             # Kubernetes Ollama deployment
 ├── tests/                  # Contract and provider tests
 ├── Dockerfile              # Split multi-stage local API/UI image build

@@ -1,5 +1,9 @@
 locals {
   agents = {
+    host = {
+      module = "agents.host_agent.__main__"
+      port   = 8000
+    }
     stay = {
       module = "agents.stay_agent.__main__"
       port   = 8002
@@ -50,42 +54,26 @@ locals {
     {
       name  = "GROUND_TRANSPORT_ENABLED"
       value = "false"
+    },
+    {
+      name  = "FLIGHT_SERVICE_URL"
+      value = var.flight_service_url
+    },
+    {
+      name  = "STAY_SERVICE_URL"
+      value = "http://stay.travel.internal:8002"
+    },
+    {
+      name  = "ACTIVITIES_SERVICE_URL"
+      value = "http://activities.travel.internal:8003"
     }
   ]
 }
 
-resource "aws_ecr_repository" "agent" {
+data "aws_ecr_repository" "agent" {
   for_each = local.agents
 
-  name                 = "${var.name_prefix}-${each.key}-agent"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  force_delete = false
-}
-
-resource "aws_ecr_lifecycle_policy" "agent" {
-  for_each = aws_ecr_repository.agent
-
-  repository = each.value.name
-
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "Keep the five most recent images"
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = 5
-      }
-      action = {
-        type = "expire"
-      }
-    }]
-  })
+  name = "${var.name_prefix}-${each.key}-agent"
 }
 
 resource "aws_cloudwatch_log_group" "agent" {
@@ -130,6 +118,70 @@ resource "aws_security_group_rule" "host_to_agents" {
   description              = "Allow the host service to call Stay and Activities"
 }
 
+resource "aws_security_group_rule" "ecs_host_to_agents" {
+  type                     = "ingress"
+  security_group_id        = var.ecs_security_group_id
+  source_security_group_id = var.ecs_security_group_id
+  from_port                = 8002
+  to_port                  = 8003
+  protocol                 = "tcp"
+  description              = "Allow the ECS Host task to call Stay and Activities"
+}
+
+resource "aws_security_group_rule" "alb_to_host" {
+  type                     = "ingress"
+  security_group_id        = var.ecs_security_group_id
+  source_security_group_id = var.alb_security_group_id
+  from_port                = 8000
+  to_port                  = 8000
+  protocol                 = "tcp"
+  description              = "Allow the public ALB to call the Host service"
+}
+
+resource "aws_security_group_rule" "public_http_to_alb" {
+  type              = "ingress"
+  security_group_id = var.alb_security_group_id
+  cidr_blocks       = ["0.0.0.0/0"]
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  description       = "Public HTTP entry point for the Host API; put HTTPS in front before production"
+}
+
+resource "aws_lb" "host" {
+  name               = "${var.name_prefix}-host"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [var.alb_security_group_id]
+  subnets            = var.public_subnet_ids
+}
+
+resource "aws_lb_target_group" "host" {
+  name        = "${var.name_prefix}-host"
+  port        = 8000
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = var.vpc_id
+
+  health_check {
+    enabled  = true
+    path     = "/healthz"
+    protocol = "HTTP"
+    matcher  = "200"
+  }
+}
+
+resource "aws_lb_listener" "host" {
+  load_balancer_arn = aws_lb.host.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.host.arn
+  }
+}
+
 resource "aws_ecs_cluster" "agents" {
   name = "${var.name_prefix}-agents"
 }
@@ -147,7 +199,7 @@ resource "aws_ecs_task_definition" "agent" {
 
   container_definitions = jsonencode([{
     name      = each.key
-    image     = "${aws_ecr_repository.agent[each.key].repository_url}:${var.image_tag}"
+    image     = "${data.aws_ecr_repository.agent[each.key].repository_url}:${var.image_tag}"
     essential = true
 
     portMappings = [{
@@ -208,5 +260,20 @@ resource "aws_ecs_service" "agent" {
     registry_arn = aws_service_discovery_service.agent[each.key].arn
   }
 
-  depends_on = [aws_security_group_rule.host_to_agents]
+  dynamic "load_balancer" {
+    for_each = each.key == "host" ? [1] : []
+
+    content {
+      target_group_arn = aws_lb_target_group.host.arn
+      container_name   = "host"
+      container_port   = 8000
+    }
+  }
+
+  depends_on = [
+    aws_security_group_rule.host_to_agents,
+    aws_security_group_rule.ecs_host_to_agents,
+    aws_security_group_rule.alb_to_host,
+    aws_lb_listener.host
+  ]
 }
