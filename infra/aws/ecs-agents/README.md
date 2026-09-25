@@ -48,8 +48,19 @@ Use the Terraform outputs in the host service:
 STAY_SERVICE_URL=http://stay.travel.internal:8002
 ACTIVITIES_SERVICE_URL=http://activities.travel.internal:8003
 FLIGHT_SERVICE_URL=https://<railway-flight-domain>
-OLLAMA_BASE_URL=https://<railway-ollama-domain>
 ```
+
+## LLM provider
+
+The cloud deployment uses OpenAI (`llm_provider = "openai"`, `openai_model = "gpt-4o-mini"`); Ollama stays the default for local development. Only Stay and Activities call the LLM, so only they receive the key.
+
+Store the key in SSM Parameter Store before applying (free, and it never enters Terraform state):
+
+```bash
+aws ssm put-parameter --region us-east-1 --name /travel/openai-api-key --type SecureString --value "sk-..."
+```
+
+Set `openai_api_key_parameter_arn` to the foundation output of the same name. After rotating the key, run `aws ecs update-service --cluster travel-agents --service <name> --force-new-deployment` so tasks pick it up.
 
 The public Host API URL is returned as `host_public_url`. The initial Terraform listener is HTTP for validation only; add an ACM certificate and HTTPS listener before production use. Do not expose the Cloud Map names publicly.
 

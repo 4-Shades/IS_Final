@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -95,14 +95,48 @@ class OllamaClient(LLMClient):
             raise LLMError("Ollama did not return a valid embedding") from exc
 
 
-class OpenAICompatibleClient(LLMClient):
-    """Temporary controlled fallback for A/B comparison during migration."""
+# Keywords OpenAI strict mode may reject; Pydantic re-validates these after parsing.
+_STRICT_UNSUPPORTED_KEYWORDS = frozenset({
+    "default", "minLength", "maxLength", "minimum", "maximum",
+    "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems",
+})
 
-    def __init__(self, settings: Settings) -> None:
+
+def to_openai_strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Every object closed and every property required, as OpenAI strict mode demands."""
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        result: dict[str, Any] = {}
+        for key, value in node.items():
+            if key in _STRICT_UNSUPPORTED_KEYWORDS:
+                continue
+            if key in {"properties", "$defs"}:
+                result[key] = {name: walk(child) for name, child in value.items()}
+            else:
+                result[key] = walk(value)
+        if result.get("type") == "object" and "properties" in result:
+            result["additionalProperties"] = False
+            result["required"] = list(result["properties"])
+        return result
+
+    return walk(schema)
+
+
+class OpenAICompatibleClient(LLMClient):
+    """OpenAI Chat Completions with strict JSON-schema output."""
+
+    def __init__(
+        self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
         self.base_url = settings.openai_base_url.rstrip("/")
         self.model = settings.openai_model
         self.api_key = settings.openai_api_key
         self.timeout_seconds = settings.llm_timeout_seconds
+        self.transport = transport
 
     async def generate_structured(
         self, prompt: str, response_type: type[ResponseModel]
@@ -117,16 +151,24 @@ class OpenAICompatibleClient(LLMClient):
                 "json_schema": {
                     "name": response_type.__name__.lower(),
                     "strict": True,
-                    "schema": response_type.model_json_schema(),
+                    "schema": to_openai_strict_schema(response_type.model_json_schema()),
                 },
             },
             "messages": [
-                {"role": "system", "content": "Return only valid JSON matching the requested schema."},
+                {
+                    "role": "system",
+                    "content": (
+                        "Return only JSON that satisfies the supplied schema. "
+                        "Do not invent live prices, availability, bookings, or sources."
+                    ),
+                },
                 {"role": "user", "content": prompt},
             ],
         }
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds)) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout_seconds), transport=self.transport
+            ) as client:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},

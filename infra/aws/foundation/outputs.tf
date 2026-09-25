@@ -24,6 +24,10 @@ output "ecs_task_role_arn" {
   value = aws_iam_role.ecs_task.arn
 }
 
+output "openai_api_key_parameter_arn" {
+  value = local.openai_api_key_parameter_arn
+}
+
 output "ecr_repository_urls" {
   description = "ECR repository URLs consumed by the ECS module."
   value       = { for name, repository in aws_ecr_repository.agent : name => repository.repository_url }

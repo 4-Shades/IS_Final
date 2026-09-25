@@ -14,11 +14,15 @@ locals {
     }
   }
 
-  common_environment = [
+  # The Host only fans out to the other agents; it never calls an LLM.
+  llm_agents = toset(["stay", "activities"])
+
+  provider_environment = var.llm_provider == "openai" ? [
     {
-      name  = "LLM_PROVIDER"
-      value = "ollama"
-    },
+      name  = "OPENAI_MODEL"
+      value = var.openai_model
+    }
+    ] : [
     {
       name  = "OLLAMA_BASE_URL"
       value = var.ollama_base_url
@@ -30,6 +34,13 @@ locals {
     {
       name  = "OLLAMA_EMBEDDING_MODEL"
       value = var.ollama_embedding_model
+    }
+  ]
+
+  common_environment = concat([
+    {
+      name  = "LLM_PROVIDER"
+      value = var.llm_provider
     },
     {
       name  = "LLM_TIMEOUT_SECONDS"
@@ -67,7 +78,7 @@ locals {
       name  = "ACTIVITIES_SERVICE_URL"
       value = "http://activities.travel.internal:8003"
     }
-  ]
+  ], local.provider_environment)
 }
 
 data "aws_ecr_repository" "agent" {
@@ -165,6 +176,17 @@ resource "aws_ecs_task_definition" "agent" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
+  lifecycle {
+    precondition {
+      condition     = var.llm_provider != "openai" || var.openai_api_key_parameter_arn != ""
+      error_message = "Set openai_api_key_parameter_arn when llm_provider = openai."
+    }
+    precondition {
+      condition     = var.llm_provider != "ollama" || var.ollama_base_url != ""
+      error_message = "Set ollama_base_url when llm_provider = ollama."
+    }
+  }
+
   container_definitions = jsonencode([{
     name      = each.key
     image     = "${data.aws_ecr_repository.agent[each.key].repository_url}:${var.image_tag}"
@@ -186,6 +208,11 @@ resource "aws_ecs_task_definition" "agent" {
         value = tostring(each.value.port)
       }
     ], local.common_environment)
+
+    secrets = var.llm_provider == "openai" && contains(local.llm_agents, each.key) ? [{
+      name      = "OPENAI_API_KEY"
+      valueFrom = var.openai_api_key_parameter_arn
+    }] : []
 
     healthCheck = {
       command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${each.value.port}/healthz')\""]

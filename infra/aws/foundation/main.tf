@@ -167,6 +167,28 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+data "aws_caller_identity" "current" {}
+
+locals {
+  openai_api_key_parameter_arn = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.openai_api_key_parameter_name}"
+}
+
+# ECS fetches the key at task start with the execution role and injects it as
+# an environment variable; the default aws/ssm KMS key needs no extra grant.
+resource "aws_iam_role_policy" "ecs_task_execution_openai_key" {
+  name = "read-openai-api-key"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameters"]
+      Resource = local.openai_api_key_parameter_arn
+    }]
+  })
+}
+
 resource "aws_iam_role" "ecs_task" {
   name = "${var.name_prefix}-ecs-task"
 

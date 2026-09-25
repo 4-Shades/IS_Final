@@ -33,6 +33,12 @@ variable "public_subnet_cidrs" {
   default     = ["10.40.0.0/20", "10.40.16.0/20"]
 }
 
+variable "openai_api_key_parameter_name" {
+  type        = string
+  description = "SSM SecureString parameter holding the OpenAI API key. Create it with the AWS CLI so the key never enters Terraform state."
+  default     = "/travel/openai-api-key"
+}
+
 variable "log_retention_days" {
   type    = number
   default = 14

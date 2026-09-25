@@ -243,7 +243,7 @@ Configuration is loaded from environment variables. Important settings include:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `ollama` | Selects Ollama or the temporary OpenAI-compatible fallback. |
+| `LLM_PROVIDER` | `ollama` | `ollama` for local development; `openai` for cloud deployments (AWS ECS uses `openai` with `gpt-4o-mini`). |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama URL outside containers; Compose uses `http://ollama:11434`. |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Generation model. |
 | `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Local embedding model for retrieval. |

@@ -51,9 +51,32 @@ variable "image_tag" {
   default     = "latest"
 }
 
+variable "llm_provider" {
+  type        = string
+  description = "LLM backend for the Stay and Activities agents: openai (cloud default) or ollama."
+  default     = "openai"
+
+  validation {
+    condition     = contains(["openai", "ollama"], var.llm_provider)
+    error_message = "llm_provider must be openai or ollama."
+  }
+}
+
+variable "openai_model" {
+  type    = string
+  default = "gpt-4o-mini"
+}
+
+variable "openai_api_key_parameter_arn" {
+  type        = string
+  description = "ARN of the SSM SecureString parameter holding the OpenAI API key (foundation output openai_api_key_parameter_arn)."
+  default     = ""
+}
+
 variable "ollama_base_url" {
   type        = string
-  description = "Private or authenticated Ollama URL reachable from the ECS task subnets."
+  description = "Ollama URL reachable from the ECS tasks. Only used when llm_provider = ollama."
+  default     = ""
 }
 
 variable "flight_service_url" {

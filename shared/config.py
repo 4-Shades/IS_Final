@@ -54,7 +54,7 @@ def get_settings() -> Settings:
         ollama_model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
         ollama_embedding_model=os.getenv("OLLAMA_EMBEDDING_MODEL", "embeddinggemma"),
         openai_base_url=_service_url("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "90")),
     )
