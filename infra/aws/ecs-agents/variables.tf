@@ -17,7 +17,7 @@ variable "vpc_id" {
 
 variable "task_subnet_ids" {
   type        = list(string)
-  description = "Private subnet IDs for the ECS tasks."
+  description = "Public subnet IDs for the ECS tasks, which get public IPs for outbound access."
 }
 
 variable "public_subnet_ids" {

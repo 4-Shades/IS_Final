@@ -4,13 +4,8 @@ output "vpc_id" {
 }
 
 output "public_subnet_ids" {
-  description = "Public subnet IDs for the Host ALB."
+  description = "Public subnet IDs for the Host ALB and the ECS tasks."
   value       = [for subnet in aws_subnet.public : subnet.id]
-}
-
-output "private_subnet_ids" {
-  description = "Private subnet IDs for ECS tasks."
-  value       = [for subnet in aws_subnet.private : subnet.id]
 }
 
 output "ecs_security_group_id" {

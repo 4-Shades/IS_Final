@@ -40,19 +40,6 @@ resource "aws_subnet" "public" {
   }
 }
 
-resource "aws_subnet" "private" {
-  for_each = local.az_index
-
-  vpc_id            = aws_vpc.travel.id
-  availability_zone = each.key
-  cidr_block        = var.private_subnet_cidrs[each.value]
-
-  tags = {
-    Name                              = "${var.name_prefix}-private-${each.key}"
-    "kubernetes.io/role/internal-elb" = "1"
-  }
-}
-
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.travel.id
 
@@ -71,51 +58,6 @@ resource "aws_route_table_association" "public" {
 
   subnet_id      = each.value.id
   route_table_id = aws_route_table.public.id
-}
-
-resource "aws_eip" "nat" {
-  for_each = var.single_nat_gateway ? toset([var.availability_zones[0]]) : toset(var.availability_zones)
-
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.name_prefix}-nat-${each.key}"
-  }
-}
-
-resource "aws_nat_gateway" "travel" {
-  for_each = aws_eip.nat
-
-  allocation_id = each.value.id
-  subnet_id     = aws_subnet.public[each.key].id
-
-  depends_on = [aws_internet_gateway.travel]
-
-  tags = {
-    Name = "${var.name_prefix}-nat-${each.key}"
-  }
-}
-
-resource "aws_route_table" "private" {
-  for_each = local.az_index
-
-  vpc_id = aws_vpc.travel.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.travel[var.single_nat_gateway ? var.availability_zones[0] : each.key].id
-  }
-
-  tags = {
-    Name = "${var.name_prefix}-private-${each.key}"
-  }
-}
-
-resource "aws_route_table_association" "private" {
-  for_each = aws_subnet.private
-
-  subnet_id      = each.value.id
-  route_table_id = aws_route_table.private[each.key].id
 }
 
 resource "aws_security_group" "alb" {

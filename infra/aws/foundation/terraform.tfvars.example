@@ -3,6 +3,4 @@ name_prefix          = "travel"
 vpc_cidr             = "10.40.0.0/16"
 availability_zones   = ["us-east-1a", "us-east-1b"]
 public_subnet_cidrs  = ["10.40.0.0/20", "10.40.16.0/20"]
-private_subnet_cidrs = ["10.40.32.0/20", "10.40.48.0/20"]
-single_nat_gateway   = true
 log_retention_days   = 14

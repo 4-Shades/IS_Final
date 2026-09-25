@@ -29,20 +29,8 @@ variable "availability_zones" {
 
 variable "public_subnet_cidrs" {
   type        = list(string)
-  description = "CIDR ranges for the public ALB subnets."
+  description = "CIDR ranges for the public subnets used by the ALB and ECS tasks."
   default     = ["10.40.0.0/20", "10.40.16.0/20"]
-}
-
-variable "private_subnet_cidrs" {
-  type        = list(string)
-  description = "CIDR ranges for the private ECS task subnets."
-  default     = ["10.40.32.0/20", "10.40.48.0/20"]
-}
-
-variable "single_nat_gateway" {
-  type        = bool
-  description = "Use one NAT gateway to reduce cost, or one per AZ for higher availability."
-  default     = true
 }
 
 variable "log_retention_days" {

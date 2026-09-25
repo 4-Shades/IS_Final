@@ -6,7 +6,7 @@ This module deploys the Host, Stay, and Activities FastAPI services to ECS Farga
 
 - Terraform >= 1.6
 - AWS credentials configured for the target account
-- An existing VPC with private subnets
+- An existing VPC with public subnets (tasks get public IPs; there is no NAT gateway)
 - An ECS task execution role with ECR pull and CloudWatch Logs permissions
 - An ECS task role for the application
 - Security groups for the host and ECS tasks
@@ -59,7 +59,7 @@ The public Host API URL is returned as `host_public_url`. The initial Terraform 
 - ECS task security group: allow inbound TCP 8002-8003 from the host security group only.
 - Host Lambda security group: allow outbound TCP 8002-8003 to the ECS task security group.
 - ECS Host task security group: allow outbound TCP 8002-8003 to the ECS task security group.
-- Private subnets need NAT or suitable VPC endpoints to pull images and send logs.
+- Tasks run in public subnets with `assign_public_ip = true` to pull images, send logs, and reach Railway. The ECS security group allows no inbound traffic from the internet.
 
 ## Destroy
 
