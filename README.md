@@ -42,14 +42,10 @@ The application uses Ollama for local, schema-constrained generation by default.
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
-   pip install -r requirements.api.txt
+   pip install -r requirements/dev.txt
    ```
 
-   If you are working on the UI locally, install the frontend extra as well:
-
-   ```bash
-   pip install -r requirements.ui.txt
-   ```
+   `requirements/dev.txt` includes the API and UI runtimes (`requirements/api.txt`, `requirements/ui.txt`) plus the test and lint tools.
 
 3. Copy the environment template:
 
@@ -94,7 +90,7 @@ Streamlit Community Cloud can host `travel_ui.py`, but it cannot host Ollama or 
 
 - **Main file path:** `travel_ui.py`
 - **Python version:** 3.11
-- **Requirements:** `requirements.txt` in the repository root
+- **Requirements:** `requirements.txt` in the repository root, which includes only the UI dependencies (`requirements/ui.txt`)
 
 In the app's Streamlit Cloud settings, add this secret:
 
@@ -112,7 +108,7 @@ Copy `.env.example` to `.env`, then start the service stack with a private Ollam
 docker compose --profile ollama up --build
 ```
 
-The Compose file uses two runtime targets from the same Dockerfile:
+The Compose file uses two targets from the root Dockerfile:
 
 - `api-runtime` for the FastAPI host and specialist services
 - `ui-runtime` for the Streamlit frontend
@@ -161,7 +157,7 @@ aws ssm put-parameter --region us-east-1 --name /travel/openai-api-key --type Se
 
 On Git Bash for Windows, prefix that command with `MSYS_NO_PATHCONV=1`, or the parameter name is rewritten into a Windows path.
 
-Build `Dockerfile.agent` once and push the same image to the `host`, `stay`, and `activities` ECR repositories; `APP_MODULE` selects the service at runtime. The module README has the exact commands, variables, and network rules.
+Build the root `Dockerfile` once (its default target is the API image) and push the same image to the `host`, `stay`, and `activities` ECR repositories; `APP_MODULE` selects the service at runtime. The module README has the exact commands, variables, and network rules.
 
 Cost controls built into the module:
 
@@ -173,13 +169,13 @@ Cost controls built into the module:
 
 The Flight agent runs on Railway from this GitHub repository and **redeploys automatically on every push to `main`**. Changes that are only committed locally never reach it; check the deployed commit with `railway status --json`.
 
-Service settings:
+The service is configured in the Railway dashboard; the repository has no Railway config files, and a root `railway.toml` is gitignored because Railway would apply it to every service built from this repo.
 
-- **Dockerfile path:** `Dockerfile.agent` (configured in `railway.flight.toml`)
+- **Dockerfile path:** `Dockerfile` (set via the `RAILWAY_DOCKERFILE_PATH` service variable; its default target is the API image)
 - **Start command:** `python -m common.serve`
 - **Health check path:** `/healthz`
 
-Set these variables in the Railway dashboard, which is where the running service reads them from (the `[env]` block in `railway.flight.toml` still lists the old Ollama settings):
+Service variables:
 
 ```env
 APP_MODULE=agents.flight_agent.__main__
@@ -205,7 +201,7 @@ The cloud deployment above does not use Ollama. These options remain for running
 Deploy Ollama as a separate private Render service before deploying the FastAPI agents:
 
 - **Runtime:** Docker
-- **Dockerfile path:** `./Dockerfile.ollama`
+- **Dockerfile path:** `./infra/ollama/Dockerfile`
 - **Docker context:** `.`
 - **Port:** `11434`
 - **Persistent disk mount:** `/root/.ollama`
@@ -221,7 +217,7 @@ Set the FastAPI services' `OLLAMA_BASE_URL` to the Ollama service's private Rend
 
 ### Railway
 
-Railway can host Ollama using `Dockerfile.ollama`; `railway.ollama.toml` sets the Dockerfile, start command (`ollama serve`), and health check (`/api/tags`). The service listens on port `11434`.
+Railway can host Ollama from `infra/ollama/Dockerfile`. In the service settings, set the Dockerfile path to that file, the start command to `ollama serve`, and the health check path to `/api/tags`. The service listens on port `11434`.
 
 Attach a Railway volume to the service at `/root/.ollama` before pulling models. Without it, models are written to the container's small temporary disk, the pull can fail with `no space left on device`, and anything downloaded is lost on redeploy. Then, in the service shell:
 
@@ -234,12 +230,12 @@ Point `OLLAMA_BASE_URL` at the service and set `LLM_PROVIDER=ollama` on the agen
 
 ### Kubernetes
 
-The manifest in `kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
+The manifest in `infra/kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
 
 Apply it to a cluster with a node labeled `workload=gpu`:
 
 ```bash
-kubectl apply -f kubernetes/ollama.yaml
+kubectl apply -f infra/kubernetes/ollama.yaml
 kubectl -n travel-planner wait --for=condition=available deployment/ollama --timeout=10m
 kubectl -n travel-planner get pods,svc
 ```
@@ -293,22 +289,23 @@ IS_Final/
 │   ├── host_agent/
 │   └── stay_agent/
 ├── common/                 # LLM, RAG, provider, and communication utilities
-├── shared/                 # Shared data schemas
-├── infra/aws/foundation/   # Terraform for VPC, IAM, security groups, and ECR
-├── infra/aws/ecs-agents/   # Terraform for Host, Stay, and Activities on ECS
-├── kubernetes/             # Kubernetes Ollama deployment
+├── shared/                 # Shared config and data schemas
 ├── tests/                  # Contract and provider tests
-├── Dockerfile              # Split multi-stage local API/UI image build
-├── Dockerfile.ollama       # Optional self-hosted Ollama image
-├── Dockerfile.agent        # FastAPI agent image for Railway and ECS
-├── railway.*.toml          # Railway service configs (flight, ollama, and others)
-├── requirements.api.txt    # FastAPI runtime dependencies
-├── requirements.ui.txt     # Streamlit runtime dependencies
-├── compose.yaml            # Containerized service stack
-├── .env.example            # Environment configuration template
-├── .env                    # Local runtime overrides (not committed)
-├── run.py                  # Script to start all agents
-├── travel_ui.py            # Streamlit frontend application
-├── README.md               # Project documentation
-└── pyproject.toml          # Project lint/test configuration
+├── infra/
+│   ├── aws/foundation/     # Terraform: VPC, subnets, security groups, IAM, ECR
+│   ├── aws/ecs-agents/     # Terraform: Host, Stay, Activities on ECS + ALB
+│   ├── ollama/Dockerfile   # Optional self-hosted Ollama image
+│   └── kubernetes/         # Optional Kubernetes Ollama deployment
+├── requirements/
+│   ├── api.txt             # FastAPI agent runtime
+│   ├── ui.txt              # Streamlit runtime
+│   └── dev.txt             # api + ui + test and lint tools
+├── requirements.txt        # Streamlit Cloud entry point (-r requirements/ui.txt)
+├── Dockerfile              # api-runtime (default) and ui-runtime targets; used by Compose, ECS, Railway
+├── compose.yaml            # Local containerized stack
+├── run.py                  # Starts all agents and the UI locally without Docker
+├── travel_ui.py            # Streamlit frontend
+├── .env.example            # Environment template (copy to .env, which is not committed)
+├── pyproject.toml          # pytest and ruff configuration
+└── README.md
 ```

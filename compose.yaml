@@ -1,25 +1,28 @@
 name: travel-planner
 
+# Merge keys (<<) are shallow, so each service merges this map into its own
+# environment explicitly; a plain `environment:` would replace it entirely.
+x-api-env: &api-env
+  LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+  OPEN_TRAVEL_DATA_ENABLED: ${OPEN_TRAVEL_DATA_ENABLED:-false}
+  WEATHER_PROVIDER_ENABLED: ${WEATHER_PROVIDER_ENABLED:-false}
+  PLACES_PROVIDER_ENABLED: ${PLACES_PROVIDER_ENABLED:-false}
+  GROUND_TRANSPORT_ENABLED: ${GROUND_TRANSPORT_ENABLED:-false}
+  # Fixed on purpose: .env sets localhost for non-Docker runs, which is wrong inside a container.
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+  OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-embeddinggemma}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+  OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+  LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
+  DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+
 x-api-service: &api-service
   build:
     context: .
-    dockerfile: Dockerfile
     target: api-runtime
   restart: unless-stopped
-  environment:
-    LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-    OPEN_TRAVEL_DATA_ENABLED: ${OPEN_TRAVEL_DATA_ENABLED:-false}
-    WEATHER_PROVIDER_ENABLED: ${WEATHER_PROVIDER_ENABLED:-false}
-    PLACES_PROVIDER_ENABLED: ${PLACES_PROVIDER_ENABLED:-false}
-    GROUND_TRANSPORT_ENABLED: ${GROUND_TRANSPORT_ENABLED:-false}
-    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
-    OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
-    OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-all-minilm}
-    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-    OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
-    LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
-    DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
   networks:
     - backend
 
@@ -27,7 +30,6 @@ services:
   ui:
     build:
       context: .
-      dockerfile: Dockerfile
       target: ui-runtime
     restart: unless-stopped
     environment:
@@ -49,6 +51,7 @@ services:
   host:
     <<: *api-service
     environment:
+      <<: *api-env
       APP_MODULE: agents.host_agent.__main__
       PORT: 8000
       FLIGHT_SERVICE_URL: http://flight:8001
@@ -89,10 +92,9 @@ services:
   flight:
     <<: *api-service
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      <<: *api-env
       APP_MODULE: agents.flight_agent.__main__
       PORT: 8001
-      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
       interval: 15s
@@ -102,10 +104,9 @@ services:
   stay:
     <<: *api-service
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      <<: *api-env
       APP_MODULE: agents.stay_agent.__main__
       PORT: 8002
-      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/healthz')"]
       interval: 15s
@@ -115,10 +116,9 @@ services:
   activities:
     <<: *api-service
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      <<: *api-env
       APP_MODULE: agents.activities_agent.__main__
       PORT: 8003
-      DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/healthz')"]
       interval: 15s

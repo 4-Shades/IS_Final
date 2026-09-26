@@ -67,7 +67,8 @@ async def test_openai_client_sends_strict_schema_and_validates_response() -> Non
             }],
             "error": None,
         }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content)}}]})
+        body = {"choices": [{"message": {"content": json.dumps(content)}}]}
+        return httpx.Response(200, json=body)
 
     client = OpenAICompatibleClient(_settings(), transport=httpx.MockTransport(handler))
     result = await client.generate_structured("Test prompt", FlightResponse)
@@ -76,17 +77,16 @@ async def test_openai_client_sends_strict_schema_and_validates_response() -> Non
 
 @pytest.mark.asyncio
 async def test_openai_client_requires_api_key() -> None:
+    client = OpenAICompatibleClient(_settings(api_key=None))
     with pytest.raises(LLMError):
-        await OpenAICompatibleClient(_settings(api_key=None)).generate_structured("p", FlightResponse)
+        await client.generate_structured("p", FlightResponse)
 
 
 @pytest.mark.asyncio
 async def test_openai_client_reports_provider_error_details() -> None:
+    error = {"error": {"message": "Invalid schema for response_format"}}
     client = OpenAICompatibleClient(
-        _settings(),
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(400, json={"error": {"message": "Invalid schema for response_format"}})
-        ),
+        _settings(), transport=httpx.MockTransport(lambda _: httpx.Response(400, json=error))
     )
     with pytest.raises(LLMError, match="HTTP 400 .*Invalid schema for response_format"):
         await client.generate_structured("p", FlightResponse)

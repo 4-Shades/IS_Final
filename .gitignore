@@ -33,7 +33,9 @@ dist/
 
 # Other files
 OLLAMA_OPEN_TRAVEL_PLAN.md
+# A root railway.toml would apply to every Railway service built from this repo.
 railway.toml
+railway.json
 
 # Operating-system files
 .DS_Store

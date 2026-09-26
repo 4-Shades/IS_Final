@@ -1,14 +1,11 @@
-.git
-.venv
-__pycache__
+# Allowlist: images only need the application code and requirements.
+# Everything else (infra/ with Terraform provider binaries, tests, docs, envs) stays out of the build context.
+*
+!agents/
+!common/
+!shared/
+!travel_ui.py
+!requirements/
+
 **/__pycache__
-*.py[cod]
-.env
-.env.*
-!.env.example
-.pytest_cache
-.ruff_cache
-tests
-MIGRATION_PLAN.md
-README.md
-run.py
+**/*.py[cod]
