@@ -171,7 +171,7 @@ The Flight agent runs on Railway from this GitHub repository and **redeploys aut
 
 The service is configured in the Railway dashboard; the repository has no Railway config files, and a root `railway.toml` is gitignored because Railway would apply it to every service built from this repo.
 
-- **Dockerfile path:** `Dockerfile` (set via the `RAILWAY_DOCKERFILE_PATH` service variable; its default target is the API image)
+- **Dockerfile path:** `Dockerfile`, set in Settings → Build (this dashboard setting overrides the `RAILWAY_DOCKERFILE_PATH` variable). Its default target is the API image.
 - **Start command:** `python -m common.serve`
 - **Health check path:** `/healthz`
 
