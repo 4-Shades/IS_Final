@@ -148,8 +148,9 @@ services:
 
 networks:
   frontend:
+  # Not internal: ollama needs the registry to pull models, and the agents
+  # need outbound HTTPS when LLM_PROVIDER=openai.
   backend:
-    internal: true
 
 volumes:
   ollama-data:
