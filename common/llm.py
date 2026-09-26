@@ -126,6 +126,13 @@ def to_openai_strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return walk(schema)
 
 
+def _provider_error_message(response: httpx.Response) -> str:
+    try:
+        return str(response.json()["error"]["message"])[:300]
+    except (ValueError, KeyError, TypeError):
+        return response.text[:300]
+
+
 class OpenAICompatibleClient(LLMClient):
     """OpenAI Chat Completions with strict JSON-schema output."""
 
@@ -177,8 +184,16 @@ class OpenAICompatibleClient(LLMClient):
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
             return response_type.model_validate_json(content)
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(
+                f"OpenAI-compatible provider returned HTTP {exc.response.status_code} "
+                f"for {response_type.__name__}: {_provider_error_message(exc.response)}"
+            ) from exc
         except (httpx.HTTPError, KeyError, TypeError, ValidationError) as exc:
-            raise LLMError(f"OpenAI-compatible provider did not return a valid {response_type.__name__}") from exc
+            raise LLMError(
+                f"OpenAI-compatible provider did not return a valid {response_type.__name__}: "
+                f"{type(exc).__name__}: {str(exc)[:300]}"
+            ) from exc
 
     async def embed(self, text: str) -> list[float]:
         if not self.api_key:
