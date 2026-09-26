@@ -5,12 +5,12 @@
 ## Overview
 The **ADK-Powered Travel Planner** is a multi-agent travel-planning application. A host service coordinates specialist services for flights, stays, and activities, while a Streamlit UI provides the user-facing workflow.
 
-The application uses Ollama for local, schema-constrained generation by default. Generated flights, stays, and activities are illustrative suggestions only; they are not live availability, live prices, or bookable offers.
+The application uses Ollama for local, schema-constrained generation by default. Cloud deployments use OpenAI `gpt-4o-mini` instead, because hosting a model needs more disk and memory than the cloud plans in use provide. Generated flights, stays, and activities are illustrative suggestions only; they are not live availability, live prices, or bookable offers.
 
 ## Features
 - **Multi-Agent Architecture:** Orchestrates specialized agents for different travel aspects.
-- **Local LLM Inference:** Uses Meta Llama models served privately by Ollama.
-- **Structured Responses:** Validates model output against shared Pydantic contracts.
+- **Pluggable LLM Provider:** Uses Meta Llama models served privately by Ollama locally, and OpenAI `gpt-4o-mini` in the cloud, selected by `LLM_PROVIDER`.
+- **Structured Responses:** Requests JSON-schema-constrained output from either provider and validates it against shared Pydantic contracts.
 - **Open Travel Data Adapters:** Provides Nominatim-compatible geocoding, Overpass places, and Open-Meteo weather adapters.
 - **Retrieval Context:** Supports curated, licensed guidance with source citations and local embeddings.
 - **Containerized Runtime:** Uses a split Docker design so API services and the UI install only the dependencies they need.
@@ -29,8 +29,9 @@ The application uses Ollama for local, schema-constrained generation by default.
 ## Prerequisites
 - Python 3.11+
 - Ollama for local, non-container development
-- Docker Desktop for containerized deployment
-- Kubernetes with a GPU node pool for the Ollama manifest
+- Docker Desktop for containerized deployment and for building cloud images
+- For the AWS deployment: AWS CLI v2, Terraform 1.6+, and an OpenAI API key with billing credits
+- Optional: Kubernetes with a GPU node pool for the Ollama manifest
 
 ## Installation
 
@@ -60,7 +61,7 @@ The application uses Ollama for local, schema-constrained generation by default.
 
    ```bash
    ollama pull llama3.2:3b
-   ollama pull all-minilm
+   ollama pull embeddinggemma
    ```
 
    The default local Ollama URL is `http://localhost:11434`.
@@ -101,7 +102,7 @@ In the app's Streamlit Cloud settings, add this secret:
 HOST_SERVICE_URL = "https://your-public-host-api.example.com"
 ```
 
-The host API and all specialist agents must be deployed separately on a Docker-capable service, with Ollama reachable by the host API. Do not use `localhost` for `HOST_SERVICE_URL` in the cloud app.
+The host API and all specialist agents must be deployed separately; see [Cloud deployment](#cloud-deployment). Set `HOST_SERVICE_URL` to the AWS `host_public_url` output, and update it after every AWS spin up because the load balancer's address changes. Do not use `localhost` for `HOST_SERVICE_URL` in the cloud app.
 
 ### Docker Compose
 
@@ -120,7 +121,7 @@ Specialist services communicate with Ollama at `http://ollama:11434` over the in
 
 ```bash
 docker compose --profile ollama exec ollama ollama pull llama3.2:3b
-docker compose --profile ollama exec ollama ollama pull all-minilm
+docker compose --profile ollama exec ollama ollama pull embeddinggemma
 ```
 
 To start the optional local PostgreSQL and Redis services, set `POSTGRES_PASSWORD` in `.env` and use:
@@ -129,7 +130,77 @@ To start the optional local PostgreSQL and Redis services, set `POSTGRES_PASSWOR
 docker compose --profile ollama --profile data up --build
 ```
 
-### Render Ollama service
+## Cloud deployment
+
+The cloud deployment splits the backend across AWS and Railway. Only the Stay, Activities, and Flight agents call the LLM; the Host only fans requests out to them.
+
+| Service | Platform | LLM |
+| --- | --- | --- |
+| Host (public API) | AWS ECS Fargate, behind an Application Load Balancer | None |
+| Stay | AWS ECS Fargate, private Cloud Map DNS | OpenAI `gpt-4o-mini` |
+| Activities | AWS ECS Fargate, private Cloud Map DNS | OpenAI `gpt-4o-mini` |
+| Flight | Railway (`travel-flight` project) | OpenAI `gpt-4o-mini` |
+| UI | Streamlit Community Cloud or local | None |
+
+Request flow: client → ALB (port 80) → Host (8000) → Stay (8002) and Activities (8003) over Cloud Map, and Flight over its Railway HTTPS URL.
+
+The AWS services are normally kept **spun down** when not in use to avoid idle load balancer charges. See [Spin down / spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) to bring them back.
+
+### AWS: Host, Stay, and Activities
+
+AWS is split into two Terraform modules, applied in order:
+
+1. [`infra/aws/foundation`](infra/aws/foundation/README.md): VPC, two public subnets, internet gateway, free S3 gateway endpoint, security groups, IAM roles, and ECR repositories. There is no NAT gateway; tasks get public IPs, and the security groups block all inbound internet traffic except to the load balancer.
+2. [`infra/aws/ecs-agents`](infra/aws/ecs-agents/README.md): ECS cluster and services, Application Load Balancer, Cloud Map namespace (`travel.internal`), log groups, and the start/stop schedule.
+
+Before the first apply, store the OpenAI key in SSM Parameter Store. ECS reads it at task start and gives it only to Stay and Activities; it never enters Terraform state.
+
+```bash
+aws ssm put-parameter --region us-east-1 --name /travel/openai-api-key --type SecureString --value "sk-..."
+```
+
+On Git Bash for Windows, prefix that command with `MSYS_NO_PATHCONV=1`, or the parameter name is rewritten into a Windows path.
+
+Build `Dockerfile.agent` once and push the same image to the `host`, `stay`, and `activities` ECR repositories; `APP_MODULE` selects the service at runtime. The module README has the exact commands, variables, and network rules.
+
+Cost controls built into the module:
+
+- Services run from 08:00 to 22:00 Asia/Manila time and scale to zero overnight, which also releases their public IPs. Adjust with `schedule_start_cron`, `schedule_stop_cron`, and `schedule_timezone`.
+- Tasks run on Fargate Spot, about 70% cheaper than regular Fargate.
+- Running continuously, the AWS stack costs roughly $41/month, about 60% of it the load balancer. Spun down, it costs a few cents a month for ECR storage.
+
+### Railway: Flight agent
+
+The Flight agent runs on Railway from this GitHub repository and **redeploys automatically on every push to `main`**. Changes that are only committed locally never reach it; check the deployed commit with `railway status --json`.
+
+Service settings:
+
+- **Dockerfile path:** `Dockerfile.agent` (configured in `railway.flight.toml`)
+- **Start command:** `python -m common.serve`
+- **Health check path:** `/healthz`
+
+Set these variables in the Railway dashboard, which is where the running service reads them from (the `[env]` block in `railway.flight.toml` still lists the old Ollama settings):
+
+```env
+APP_MODULE=agents.flight_agent.__main__
+PORT=8001
+LLM_PROVIDER=openai
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_API_KEY=sk-...
+LLM_TIMEOUT_SECONDS=120
+OPEN_TRAVEL_DATA_ENABLED=false
+WEATHER_PROVIDER_ENABLED=false
+PLACES_PROVIDER_ENABLED=false
+GROUND_TRANSPORT_ENABLED=false
+```
+
+Set the ECS module's `flight_service_url` variable to the Railway Flight HTTPS URL. Railway services keep running when AWS is spun down; pause Flight in the Railway dashboard to stop its usage too.
+
+## Self-hosted Ollama (optional)
+
+The cloud deployment above does not use Ollama. These options remain for running Ollama as a service instead of calling OpenAI. Each needs roughly 3 GB of disk for `llama3.2:3b` and `embeddinggemma`, and about 4 GB of memory to run the generation model; small or trial plans cannot fit this.
+
+### Render
 
 Deploy Ollama as a separate private Render service before deploying the FastAPI agents:
 
@@ -148,82 +219,20 @@ ollama pull embeddinggemma
 
 Set the FastAPI services' `OLLAMA_BASE_URL` to the Ollama service's private Render URL. Keep the Ollama service private; only the public host API should be exposed.
 
-### Railway Ollama service
+### Railway
 
-Railway can host the Ollama service using `Dockerfile.ollama`. The repository includes `railway.toml` so Railway uses the correct Dockerfile, port, start command, and health endpoint.
+Railway can host Ollama using `Dockerfile.ollama`; `railway.ollama.toml` sets the Dockerfile, start command (`ollama serve`), and health check (`/api/tags`). The service listens on port `11434`.
 
-Create a Railway service from this repository with these settings:
-
-- **Dockerfile:** `Dockerfile.ollama`
-- **Port:** `11434`
-- **Start command:** `ollama serve`
-- **Health check:** `/api/tags`
-
-Attach a Railway volume to the service at `/root/.ollama`. Without this volume, downloaded models are lost whenever the service is redeployed.
-
-After the service is running, use its shell to download the configured models:
+Attach a Railway volume to the service at `/root/.ollama` before pulling models. Without it, models are written to the container's small temporary disk, the pull can fail with `no space left on device`, and anything downloaded is lost on redeploy. Then, in the service shell:
 
 ```bash
 ollama pull llama3.2:3b
 ollama pull embeddinggemma
 ```
 
-Use the Railway HTTPS domain as `OLLAMA_BASE_URL` in the FastAPI host. Do not expose an unauthenticated Ollama endpoint in production.
+Point `OLLAMA_BASE_URL` at the service and set `LLM_PROVIDER=ollama` on the agents. Do not expose an unauthenticated Ollama endpoint in production.
 
-### Railway Flight agent service
-
-The Flight agent remains on Railway. Stay and Activities are deployed to AWS ECS Fargate using the Terraform module described below. If you temporarily deploy all specialist agents on Railway, each service uses the repository's API image and communicates with Ollama over Railway networking.
-
-For each service, use these settings:
-
-- **Runtime:** Docker
-- **Dockerfile path:** `./Dockerfile.agent`
-- **Docker context:** `.`
-- **Start command:** `python -m common.serve`
-- **Health check path:** `/healthz`
-
-Use `Dockerfile.agent` instead of `Dockerfile.ollama` for these services. This dedicated image includes Python and the API dependencies, so it is not affected by the repository's Ollama-specific `railway.toml` configuration.
-
-Configure the services as follows:
-
-| Service | `APP_MODULE` | `PORT` |
-| --- | --- | --- |
-| `travel-flight` | `agents.flight_agent.__main__` | `8001` |
-
-Add these variables to each specialist service:
-
-```env
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://<ollama-private-domain>:11434
-OLLAMA_MODEL=llama3.2:3b
-OLLAMA_EMBEDDING_MODEL=embeddinggemma
-LLM_TIMEOUT_SECONDS=120
-DOWNSTREAM_TIMEOUT_SECONDS=150
-OPEN_TRAVEL_DATA_ENABLED=false
-WEATHER_PROVIDER_ENABLED=false
-PLACES_PROVIDER_ENABLED=false
-GROUND_TRANSPORT_ENABLED=false
-```
-
-Replace `<ollama-private-domain>` with the Ollama service's Railway private hostname. Keep the Flight service private. The ECS services use the same Ollama variables through Terraform. After all services are healthy, set the FastAPI host's `FLIGHT_SERVICE_URL` to the Railway Flight URL and use the ECS Cloud Map outputs for `STAY_SERVICE_URL` and `ACTIVITIES_SERVICE_URL`.
-
-### AWS ECS Host, Stay, and Activities services
-
-The Terraform module in `infra/aws/ecs-agents` deploys the Host, Stay, and Activities services to ECS Fargate using `Dockerfile.agent`. The Host is exposed through an Application Load Balancer, while Stay and Activities use private Cloud Map DNS names:
-
-- `http://stay.travel.internal:8002`
-- `http://activities.travel.internal:8003`
-
-The Host task calls the existing Railway Flight and Ollama services over their HTTPS URLs. The public Host API URL is returned as the `host_public_url` Terraform output. Configure the Host task with:
-
-```env
-STAY_SERVICE_URL=http://stay.travel.internal:8002
-ACTIVITIES_SERVICE_URL=http://activities.travel.internal:8003
-```
-
-See [`infra/aws/ecs-agents/README.md`](infra/aws/ecs-agents/README.md) for prerequisites, ECR image publishing, network rules, and deployment commands. Keep `OLLAMA_BASE_URL` pointed at the existing Railway Ollama service.
-
-### Kubernetes Ollama deployment
+### Kubernetes
 
 The manifest in `kubernetes/ollama.yaml` defines persistent model storage, a GPU-targeted deployment, a private `ClusterIP` service, readiness and liveness probes, NetworkPolicy, and a model preload job.
 
@@ -243,10 +252,16 @@ Configuration is loaded from environment variables. Important settings include:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `ollama` | `ollama` for local development; `openai` for cloud deployments (AWS ECS uses `openai` with `gpt-4o-mini`). |
+| `LLM_PROVIDER` | `ollama` | `ollama` for local development; `openai` for the cloud deployment. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model when `LLM_PROVIDER=openai`. |
+| `OPENAI_API_KEY` | none | Required when `LLM_PROVIDER=openai`. On AWS it comes from SSM, never from Terraform variables. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama URL outside containers; Compose uses `http://ollama:11434`. |
-| `OLLAMA_MODEL` | `llama3.2:3b` | Generation model. |
-| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Local embedding model for retrieval. |
+| `OLLAMA_MODEL` | `llama3.2:3b` | Ollama generation model. |
+| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Ollama embedding model. |
+| `LLM_TIMEOUT_SECONDS` | `90` | Timeout for a single LLM call. |
+| `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, `ACTIVITIES_SERVICE_URL` | `http://localhost:8001`-`8003` | Specialist agent URLs used by the Host. |
+| `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | How long the Host waits for each specialist agent. |
 | `OPEN_TRAVEL_DATA_ENABLED` | `false` | Enables the open-travel-data rollout flag. |
 | `WEATHER_PROVIDER_ENABLED` | `false` | Controls weather-provider rollout. |
 | `PLACES_PROVIDER_ENABLED` | `false` | Controls places-provider rollout. |
@@ -284,9 +299,9 @@ IS_Final/
 ├── kubernetes/             # Kubernetes Ollama deployment
 ├── tests/                  # Contract and provider tests
 ├── Dockerfile              # Split multi-stage local API/UI image build
-├── Dockerfile.ollama       # Railway Ollama service image
-├── Dockerfile.agent        # Railway/ECS FastAPI agent image
-├── railway.toml             # Railway Ollama deployment configuration
+├── Dockerfile.ollama       # Optional self-hosted Ollama image
+├── Dockerfile.agent        # FastAPI agent image for Railway and ECS
+├── railway.*.toml          # Railway service configs (flight, ollama, and others)
 ├── requirements.api.txt    # FastAPI runtime dependencies
 ├── requirements.ui.txt     # Streamlit runtime dependencies
 ├── compose.yaml            # Containerized service stack
@@ -295,6 +310,5 @@ IS_Final/
 ├── run.py                  # Script to start all agents
 ├── travel_ui.py            # Streamlit frontend application
 ├── README.md               # Project documentation
-├── OLLAMA_OPEN_TRAVEL_PLAN.md
-└── pyproject.toml         # Project lint/test configuration
+└── pyproject.toml          # Project lint/test configuration
 ```
