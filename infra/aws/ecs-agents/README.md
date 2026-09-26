@@ -66,24 +66,47 @@ The public Host API URL is returned as `host_public_url`. The initial Terraform 
 
 ## Network requirements
 
-- ECS task security group: allow outbound TCP 443 to the Railway Ollama endpoint and required APIs.
-- ECS task security group: allow inbound TCP 8002-8003 from the host security group only.
-- Host Lambda security group: allow outbound TCP 8002-8003 to the ECS task security group.
-- ECS Host task security group: allow outbound TCP 8002-8003 to the ECS task security group.
+- ALB security group: inbound TCP 80 from the internet; outbound TCP 8000 to the ECS security group only.
+- ECS security group: inbound TCP 8000 from the ALB, and TCP 8002-8003 from itself (Host to Stay and Activities).
+- ECS security group: outbound TCP 443 (ECR, CloudWatch Logs, S3, OpenAI, Railway Flight) and TCP 8002-8003 to itself.
 - Tasks run in public subnets with `assign_public_ip = true` to pull images, send logs, and reach Railway. The ECS security group allows no inbound traffic from the internet.
 
 Security group rules are owned by `../foundation`; this module only attaches the groups.
 
 ## Cost controls
 
-- `schedule_enabled` scales every service between `desired_count` (at `schedule_start_cron`) and zero (at `schedule_stop_cron`) in `schedule_timezone`. With no running tasks there are no task public IPv4 addresses or Fargate charges. The ALB and its public IPs keep billing; run `terraform destroy` here if the stack will sit idle for days.
+- `schedule_enabled` scales every service between `desired_count` (at `schedule_start_cron`) and zero (at `schedule_stop_cron`) in `schedule_timezone`. With no running tasks there are no task public IPv4 addresses or Fargate charges. The ALB and its public IPs keep billing; see [Spin down / spin up](#spin-down--spin-up) if the stack will sit idle for days.
 - `use_fargate_spot` runs tasks on Fargate Spot. AWS can reclaim a Spot task with two minutes' notice; ECS starts a replacement automatically.
 - To start the services outside the window, run `aws ecs update-service --cluster travel-agents --service <name> --desired-count 1 --region us-east-1`. The next scheduled stop scales them back down.
 
-## Destroy
+## Spin down / spin up
+
+The ALB bills about $24/month whether or not anything is running, and it cannot be paused. When the stack will be idle for days, destroy this module and re-apply it when needed. Run both from this directory.
+
+If your AWS CLI uses `aws login`, export its credentials for Terraform first:
 
 ```bash
-terraform destroy -var-file=terraform.tfvars
+eval "$(aws configure export-credentials --format env)"
 ```
 
-ECR repositories are created and protected by `../foundation`; the ECS module only reads them.
+Spin down (removes the ALB, ECS cluster, services, Cloud Map namespace, and log groups; about 2-5 minutes):
+
+```bash
+terraform plan -destroy -var-file=terraform.tfvars -out=down.tfplan
+terraform apply down.tfplan
+```
+
+Spin up (about 5 minutes, plus a few minutes for tasks to pass health checks):
+
+```bash
+terraform plan -var-file=terraform.tfvars -out=up.tfplan
+terraform apply up.tfplan
+terraform output -raw host_public_url
+aws ecs wait services-stable --region us-east-1 --cluster travel-agents --services travel-host travel-stay travel-activities
+```
+
+The ALB gets a new DNS name on every spin up, so re-check `host_public_url` and update any client that points at it.
+
+Spinning down keeps everything in `../foundation` (VPC, subnets, security groups, IAM roles, ECR images) and the `/travel/openai-api-key` parameter, none of which cost anything except a few cents of ECR storage. Spin up reuses them, so no rebuild or image push is needed. Log history in CloudWatch is deleted with the log groups.
+
+The Railway Flight service is separate and keeps running; pause it in the Railway dashboard if you also want to stop its usage.
