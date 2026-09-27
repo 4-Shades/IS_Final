@@ -10,8 +10,10 @@ logger = logging.getLogger(__name__)
 async def execute(request: TravelRequest) -> FlightResponse:
     rag_prompt, _ = get_rag_index().augment_prompt(
         (
-            f"Suggest 2-3 non-live, illustrative flights from {request.origin} to {request.destination} "
-            f"from {request.start_date} to {request.end_date} for {request.travellers} traveller(s), "
+            "Suggest 2-3 non-live, illustrative flights "
+            f"from {request.origin} to {request.destination} "
+            f"from {request.start_date} to {request.end_date} "
+            f"for {request.travellers} traveller(s), "
             f"within {request.budget} {request.currency}."
         ),
         destination=request.destination,

@@ -38,7 +38,7 @@ class TravelRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_dates(self) -> "TravelRequest":
+    def validate_dates(self) -> TravelRequest:
         if self.end_date <= self.start_date:
             raise ValueError("end_date must be after start_date")
         return self
@@ -76,9 +76,11 @@ class FlightResponse(BaseModel):
     error: str | None = None
 
     @model_validator(mode="after")
-    def validate_flight_payload(self) -> "FlightResponse":
+    def validate_flight_payload(self) -> FlightResponse:
         if not self.flights and self.error is None:
-            raise ValueError("flight response must include at least one flight or an explicit error")
+            raise ValueError(
+                "flight response must include at least one flight or an explicit error"
+            )
         return self
 
 
@@ -87,7 +89,7 @@ class StayResponse(BaseModel):
     error: str | None = None
 
     @model_validator(mode="after")
-    def validate_stay_payload(self) -> "StayResponse":
+    def validate_stay_payload(self) -> StayResponse:
         if not self.stays and self.error is None:
             raise ValueError("stay response must include at least one stay or an explicit error")
         return self
@@ -98,9 +100,11 @@ class ActivitiesResponse(BaseModel):
     error: str | None = None
 
     @model_validator(mode="after")
-    def validate_activity_payload(self) -> "ActivitiesResponse":
+    def validate_activity_payload(self) -> ActivitiesResponse:
         if not self.activities and self.error is None:
-            raise ValueError("activity response must include at least one activity or an explicit error")
+            raise ValueError(
+                "activity response must include at least one activity or an explicit error"
+            )
         return self
 
 

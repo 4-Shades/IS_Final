@@ -198,7 +198,7 @@ class OpenAICompatibleClient(LLMClient):
     async def embed(self, text: str) -> list[float]:
         if not self.api_key:
             raise LLMError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-        raise NotImplementedError("Embedding is not implemented for the OpenAI comparison fallback.")
+        raise NotImplementedError("Embedding is not implemented for the OpenAI provider.")
 
 
 def get_llm_client(settings: Settings | None = None) -> LLMClient:

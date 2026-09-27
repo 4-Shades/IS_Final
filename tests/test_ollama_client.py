@@ -19,7 +19,15 @@ async def test_ollama_client_sends_schema_and_validates_response() -> None:
             json={
                 "message": {
                     "content": json.dumps(
-                        {"flights": [{"airline": "Example Air", "departure_time": "09:00", "return_time": "18:00", "price": 100, "stops": 0}]}
+                        {
+                            "flights": [{
+                                "airline": "Example Air",
+                                "departure_time": "09:00",
+                                "return_time": "18:00",
+                                "price": 100,
+                                "stops": 0,
+                            }]
+                        }
                     )
                 }
             },
@@ -37,7 +45,9 @@ async def test_ollama_client_sends_schema_and_validates_response() -> None:
 async def test_ollama_client_rejects_invalid_model_json() -> None:
     client = OllamaClient(
         base_url="http://ollama:11434", model="llama3.2:3b", timeout_seconds=5,
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"message": {"content": "{}"}})),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"message": {"content": "{}"}})
+        ),
     )
     with pytest.raises(LLMError):
         await client.generate_structured("Test prompt", FlightResponse)

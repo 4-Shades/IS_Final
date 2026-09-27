@@ -7,8 +7,7 @@ bookable fare. They provide non-live contextual data with clear provenance.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
@@ -29,7 +28,9 @@ class GeocodingResult:
     latitude: float
     longitude: float
     country: str | None = None
-    metadata: ProviderMetadata = field(default_factory=lambda: ProviderMetadata(provider="nominatim"))
+    metadata: ProviderMetadata = field(
+        default_factory=lambda: ProviderMetadata(provider="nominatim")
+    )
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,9 @@ class PlaceResult:
     longitude: float
     osm_id: str
     source_url: str
-    metadata: ProviderMetadata = field(default_factory=lambda: ProviderMetadata(provider="overpass"))
+    metadata: ProviderMetadata = field(
+        default_factory=lambda: ProviderMetadata(provider="overpass")
+    )
 
 
 @dataclass(frozen=True)
@@ -49,13 +52,17 @@ class WeatherForecast:
     temperature_c: float | None
     precipitation_mm: float | None
     weather_code: int | None
-    metadata: ProviderMetadata = field(default_factory=lambda: ProviderMetadata(provider="open-meteo", license="CC BY 4.0"))
+    metadata: ProviderMetadata = field(
+        default_factory=lambda: ProviderMetadata(provider="open-meteo", license="CC BY 4.0")
+    )
 
 
 class GeocodingProvider:
     """Nominatim-compatible geocoding provider with minimal local caching."""
 
-    def __init__(self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0) -> None:
+    def __init__(
+        self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0
+    ) -> None:
         self.client = client or httpx.Client(timeout=timeout_seconds)
         self.timeout_seconds = timeout_seconds
         self._cache: dict[str, GeocodingResult] = {}
@@ -86,10 +93,13 @@ class GeocodingProvider:
             country=(item.get("address") or {}).get("country"),
             metadata=ProviderMetadata(
                 provider="nominatim",
-                source_url="https://nominatim.openstreetmap.org/ui/search.html?q=" + query.replace(" ", "+"),
-                retrieved_at=datetime.now(timezone.utc),
+                source_url=(
+                    "https://nominatim.openstreetmap.org/ui/search.html?q="
+                    + query.replace(" ", "+")
+                ),
+                retrieved_at=datetime.now(UTC),
                 license="ODbL 1.0",
-                cache_expires_at=datetime.now(timezone.utc),
+                cache_expires_at=datetime.now(UTC),
                 is_live_inventory=False,
             ),
         )
@@ -100,11 +110,20 @@ class GeocodingProvider:
 class PlacesProvider:
     """Overpass POI provider for activities and stay-adjacent local discovery."""
 
-    def __init__(self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0) -> None:
+    def __init__(
+        self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0
+    ) -> None:
         self.client = client or httpx.Client(timeout=timeout_seconds)
         self.timeout_seconds = timeout_seconds
 
-    def search(self, latitude: float, longitude: float, category: str, radius_km: float = 5.0, limit: int = 10) -> list[PlaceResult]:
+    def search(
+        self,
+        latitude: float,
+        longitude: float,
+        category: str,
+        radius_km: float = 5.0,
+        limit: int = 10,
+    ) -> list[PlaceResult]:
         radius_m = max(1, int(radius_km * 1000))
         query = (
             f"[out:json][timeout:25];"
@@ -137,9 +156,9 @@ class PlacesProvider:
             metadata = ProviderMetadata(
                 provider="overpass",
                 source_url=f"https://www.openstreetmap.org/{osm_type}/{osm_id}",
-                retrieved_at=datetime.now(timezone.utc),
+                retrieved_at=datetime.now(UTC),
                 license="ODbL 1.0",
-                cache_expires_at=datetime.now(timezone.utc) + timedelta(minutes=60),
+                cache_expires_at=datetime.now(UTC) + timedelta(minutes=60),
                 is_live_inventory=False,
             )
             results.append(
@@ -159,7 +178,9 @@ class PlacesProvider:
 class WeatherProvider:
     """Open-Meteo weather provider returning a bounded forecast window."""
 
-    def __init__(self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0) -> None:
+    def __init__(
+        self, *, client: httpx.Client | None = None, timeout_seconds: float = 15.0
+    ) -> None:
         self.client = client or httpx.Client(timeout=timeout_seconds)
         self.timeout_seconds = timeout_seconds
 
@@ -191,9 +212,9 @@ class WeatherProvider:
         metadata = ProviderMetadata(
             provider="open-meteo",
             source_url="https://open-meteo.com/",
-            retrieved_at=datetime.now(timezone.utc),
+            retrieved_at=datetime.now(UTC),
             license="CC BY 4.0",
-            cache_expires_at=datetime.now(timezone.utc) + timedelta(minutes=60),
+            cache_expires_at=datetime.now(UTC) + timedelta(minutes=60),
             is_live_inventory=False,
         )
 

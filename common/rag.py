@@ -53,7 +53,10 @@ _DEFAULT_GUIDANCE = [
         "embedding": [1.0, 0.0],
     },
     {
-        "text": "Public transit in Paris is usually the most convenient option for central sightseeing days.",
+        "text": (
+            "Public transit in Paris is usually the most convenient option "
+            "for central sightseeing days."
+        ),
         "metadata": {
             "destination": "Paris",
             "language": "en",
@@ -67,7 +70,10 @@ _DEFAULT_GUIDANCE = [
         "embedding": [0.9, 0.1],
     },
     {
-        "text": "Rome historic attractions can involve long queues during midday; early entry helps reduce wait times.",
+        "text": (
+            "Rome historic attractions can involve long queues during midday; "
+            "early entry helps reduce wait times."
+        ),
         "metadata": {
             "destination": "Rome",
             "language": "en",
@@ -98,7 +104,9 @@ class RAGIndex:
         for item in _DEFAULT_GUIDANCE:
             self.add_document(item["text"], metadata=item["metadata"], embedding=item["embedding"])
 
-    def _filter(self, *, destination: str | None = None, language: str | None = None) -> list[RAGDocument]:
+    def _filter(
+        self, *, destination: str | None = None, language: str | None = None
+    ) -> list[RAGDocument]:
         documents: list[RAGDocument] = []
         for doc in self._documents:
             metadata = doc.metadata
@@ -139,13 +147,17 @@ class RAGIndex:
             if not snippet:
                 continue
             snippets.append(
-                f"- {snippet} [Source: {result.citation.title} | {result.citation.source_url} | {result.citation.license or 'unknown license'}]"
+                f"- {snippet} [Source: {result.citation.title} | "
+                f"{result.citation.source_url} | "
+                f"{result.citation.license or 'unknown license'}]"
             )
             citations.append(result.citation)
 
         context = "\n".join(snippets)
         return (
-            f"Use the following curated guidance only. Do not invent sources or live inventory.\n{context}\n\nUser request: {query}",
+            "Use the following curated guidance only. "
+            "Do not invent sources or live inventory.\n"
+            f"{context}\n\nUser request: {query}",
             citations,
         )
 

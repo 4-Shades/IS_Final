@@ -36,7 +36,9 @@ def _port_is_open(port: int) -> bool:
         return connection.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _wait_for_service(service: Service, process: subprocess.Popen[bytes], timeout: float = 30) -> None:
+def _wait_for_service(
+    service: Service, process: subprocess.Popen[bytes], timeout: float = 30
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:

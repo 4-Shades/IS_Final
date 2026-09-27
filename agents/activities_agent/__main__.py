@@ -1,4 +1,5 @@
 from common.a2a_server import create_app
+
 from .task_manager import run
 
 app = create_app(service_name="activities", execute=run)

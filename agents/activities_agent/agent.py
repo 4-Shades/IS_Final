@@ -31,5 +31,7 @@ async def execute(request: TravelRequest) -> ActivitiesResponse:
     try:
         return await get_llm_client().generate_structured(prompt, ActivitiesResponse)
     except LLMError as exc:
-        logger.warning("activities_generation_failed request_id=%s error=%s", request.request_id, exc)
+        logger.warning(
+            "activities_generation_failed request_id=%s error=%s", request.request_id, exc
+        )
         return ActivitiesResponse(error="Activity planner is temporarily unavailable.")
