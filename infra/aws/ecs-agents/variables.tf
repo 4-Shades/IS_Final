@@ -73,6 +73,23 @@ variable "openai_api_key_parameter_arn" {
   default     = ""
 }
 
+variable "host_api_key_parameter_arn" {
+  type        = string
+  description = "ARN of the SSM SecureString parameter holding the key clients send as X-API-Key to the Host (foundation output host_api_key_parameter_arn). The parameter must exist before apply."
+}
+
+variable "alb_logs_bucket" {
+  type        = string
+  description = "S3 bucket for ALB access logs (foundation output alb_logs_bucket). Empty disables access logs."
+  default     = ""
+}
+
+variable "waf_rate_limit_per_5_minutes" {
+  type        = number
+  description = "Requests allowed per client IP in any 5-minute window before WAF blocks it."
+  default     = 2000
+}
+
 variable "ollama_base_url" {
   type        = string
   description = "Ollama URL reachable from the ECS tasks. Only used when llm_provider = ollama."

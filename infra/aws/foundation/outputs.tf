@@ -36,3 +36,16 @@ output "ecr_repository_urls" {
 output "ecr_repository_names" {
   value = { for name, repository in aws_ecr_repository.agent : name => repository.name }
 }
+
+output "host_api_key_parameter_arn" {
+  value = local.host_api_key_parameter_arn
+}
+
+output "github_actions_role_arn" {
+  description = "Set as the AWS_ROLE_ARN repository variable in GitHub Actions."
+  value       = aws_iam_role.github_actions.arn
+}
+
+output "alb_logs_bucket" {
+  value = aws_s3_bucket.alb_logs.bucket
+}

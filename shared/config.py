@@ -26,6 +26,7 @@ class Settings:
     openai_model: str
     openai_api_key: str | None
     llm_timeout_seconds: float
+    host_api_key: str | None
 
 
 def _service_url(name: str, default: str) -> str:
@@ -57,4 +58,5 @@ def get_settings() -> Settings:
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "90")),
+        host_api_key=os.getenv("HOST_API_KEY") or None,
     )

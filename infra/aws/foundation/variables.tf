@@ -39,6 +39,30 @@ variable "openai_api_key_parameter_name" {
   default     = "/travel/openai-api-key"
 }
 
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository (owner/name) allowed to push agent images to ECR from Actions on main."
+  default     = "4-Shades/IS_Final"
+}
+
+variable "create_github_oidc_provider" {
+  type        = bool
+  description = "Create the account's GitHub Actions OIDC provider. Set false if the account already has one; only one is allowed per account."
+  default     = true
+}
+
+variable "host_api_key_parameter_name" {
+  type        = string
+  description = "SSM SecureString parameter holding the key clients must send in X-API-Key to the public Host API."
+  default     = "/travel/host-api-key"
+}
+
+variable "alb_log_retention_days" {
+  type        = number
+  description = "Days to keep ALB access logs in S3."
+  default     = 30
+}
+
 variable "log_retention_days" {
   type    = number
   default = 14

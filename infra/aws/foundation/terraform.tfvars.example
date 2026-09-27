@@ -4,3 +4,6 @@ vpc_cidr             = "10.40.0.0/16"
 availability_zones   = ["us-east-1a", "us-east-1b"]
 public_subnet_cidrs  = ["10.40.0.0/20", "10.40.16.0/20"]
 log_retention_days   = 14
+# Set false if the AWS account already has a GitHub Actions OIDC provider.
+create_github_oidc_provider = true
+github_repository           = "4-Shades/IS_Final"

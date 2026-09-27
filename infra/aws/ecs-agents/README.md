@@ -6,7 +6,7 @@ This module deploys the Host, Stay, and Activities FastAPI services to ECS Farga
 
 - Terraform >= 1.6, AWS CLI v2, and Docker
 - `../foundation` applied, with its outputs copied into `terraform.tfvars`
-- The OpenAI key stored in SSM (see [LLM provider](#llm-provider))
+- The OpenAI key stored in SSM (see [LLM provider](#llm-provider)), and the Host API key stored at `/travel/host-api-key` (see the root README's [Public API security](../../../README.md#public-api-security)); tasks can't start if either parameter is missing
 - The Railway Flight agent's HTTPS URL for `flight_service_url`
 
 ## Deploy

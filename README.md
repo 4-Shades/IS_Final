@@ -132,15 +132,16 @@ AWS uses two Terraform modules:
 
 ### Deploy, in order
 
-1. **Store the OpenAI key in SSM.** ECS reads it at task start and gives it only to Stay and Activities; it never enters Terraform state. On Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1`, or the parameter name is rewritten into a Windows path.
+1. **Store the two keys in SSM.** ECS reads them at task start; they never enter Terraform state. The OpenAI key goes only to Stay and Activities. The Host API key is what clients must send as `X-API-Key`; generate a long random value. On Git Bash for Windows, prefix each command with `MSYS_NO_PATHCONV=1`, or the parameter name is rewritten into a Windows path.
 
    ```bash
    aws ssm put-parameter --region us-east-1 --name /travel/openai-api-key --type SecureString --value "sk-..."
+   aws ssm put-parameter --region us-east-1 --name /travel/host-api-key --type SecureString --value "$(openssl rand -hex 32)"
    ```
 
-2. **Apply the foundation.** In `infra/aws/foundation`, copy `terraform.tfvars.example` to `terraform.tfvars`, then run `terraform init` and `terraform apply -var-file=terraform.tfvars`.
+2. **Apply the foundation.** In `infra/aws/foundation`, copy `terraform.tfvars.example` to `terraform.tfvars`, then run `terraform init` and `terraform apply -var-file=terraform.tfvars`. If your AWS account already has a GitHub Actions OIDC provider, set `create_github_oidc_provider = false` first.
 
-3. **Build and push the agent image.** Build the root `Dockerfile` once (its default target is the API image) and push it to the `host`, `stay`, and `activities` ECR repositories; `APP_MODULE` selects the agent at runtime. See [Deploy](infra/aws/ecs-agents/README.md#deploy) for the commands.
+3. **Push the agent image.** [GitHub Actions](#continuous-integration) builds the root `Dockerfile` and pushes it to the `host`, `stay`, and `activities` ECR repositories on every push to `main`, tagged with the short commit SHA. To push by hand instead, see [Deploy](infra/aws/ecs-agents/README.md#deploy).
 
 4. **Deploy the Flight agent on Railway.** See [Railway Flight agent](#railway-flight-agent) below, and note its HTTPS URL.
 
@@ -150,7 +151,10 @@ AWS uses two Terraform modules:
 
    ```toml
    HOST_SERVICE_URL = "<value of the host_public_url output, e.g. http://travel-host-123.us-east-1.elb.amazonaws.com>"
+   HOST_API_KEY = "<the value stored in /travel/host-api-key>"
    ```
+
+   Any other client must send the key too, for example `curl -H "X-API-Key: <key>" -H "Content-Type: application/json" -d @trip.json <host_public_url>/run`. Requests without it get `401`.
 
 If your AWS CLI signs in with `aws login`, run `eval "$(aws configure export-credentials --format env)"` in the same shell before each Terraform command; Terraform can't read those credentials directly.
 
@@ -185,7 +189,18 @@ GROUND_TRANSPORT_ENABLED=false
 - **The public URL changes on every spin up.** Update `HOST_SERVICE_URL` in the Streamlit Cloud secrets afterwards.
 - **Built-in savings while running:** services only run from 08:00 to 22:00 Asia/Manila time and scale to zero overnight, which also releases their public IPs (adjust with `schedule_start_cron`, `schedule_stop_cron`, `schedule_timezone`). Tasks run on Fargate Spot, about 70% cheaper than regular Fargate.
 - **Railway keeps running when AWS is spun down.** Pause the Flight service in the Railway dashboard to stop its usage too.
-- **Deploying code changes:** push to `main` for Flight. For the AWS agents, build and push a new image tag, update `image_tag`, and apply the ECS module.
+- **Deploying code changes:** push to `main`. Railway redeploys Flight itself; GitHub Actions pushes a new AWS image tagged with the short commit SHA (shown in the run summary). Set that as `image_tag` and apply the ECS module to deploy it.
+
+### Public API security
+
+The Host is the only public entry point. It is protected by:
+
+- **An API key.** `POST /run` requires `X-API-Key` to match `/travel/host-api-key`. Health checks stay open so the load balancer can reach them. To rotate the key, update the parameter and run `aws ecs update-service --cluster travel-agents --service travel-host --force-new-deployment --region us-east-1`, then update the Streamlit secret.
+- **AWS WAF on the load balancer.** AWS's common-exploit and known-bad-input rule sets, plus a per-IP rate limit (`waf_rate_limit_per_5_minutes`, default 2,000). It is created and destroyed with the ECS module and costs roughly $8/month while it exists.
+- **Access logs** for every request, kept in S3 for 30 days (`alb_logs_bucket` foundation output).
+- **Security groups** that block all direct inbound traffic to the tasks.
+
+**Not yet: HTTPS.** Traffic to the load balancer is plain HTTP, so the API key travels unencrypted. HTTPS needs a domain name, because AWS certificates can't be issued for the load balancer's own `elb.amazonaws.com` address. Once you have a domain, the path is: a Route53 hosted zone, a DNS-validated ACM certificate, an HTTPS listener on port 443 with port 80 redirecting to it, and `HOST_SERVICE_URL` updated to `https://`.
 
 ## Configuration
 
@@ -204,6 +219,7 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, `ACTIVITIES_SERVICE_URL` | `http://localhost:8001`-`8003` | Railway URL; `http://stay.travel.internal:8002`, `http://activities.travel.internal:8003` (set by Terraform) | Specialist agent URLs used by the Host. |
 | `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | `150` | How long the Host waits for each specialist agent. |
 | `HOST_SERVICE_URL` | `http://localhost:8000` | The `host_public_url` output | Where the UI sends requests. |
+| `HOST_API_KEY` | Unset (Host is open) | From SSM on AWS; a Streamlit secret for the UI | Key the Host requires as `X-API-Key` on `POST /run`, and that the UI sends. |
 | `OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, `GROUND_TRANSPORT_ENABLED` | `false` | `false` | Rollout flags for the open travel-data providers. |
 
 Do not commit `.env` or API keys. Use `.env.example` as the starting template.
@@ -215,10 +231,20 @@ python -m pytest -q
 python -m ruff check .
 ```
 
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request to `main`:
+
+- **`test`:** the same `pytest` and `ruff` commands as above.
+- **`build-and-push`** (pushes to `main` only, after tests pass): builds the agent image and pushes it to the three ECR repositories, tagged with the short commit SHA. It does not deploy; spinning up and applying the ECS module stays manual.
+
+It signs in to AWS through GitHub's OIDC provider, so no AWS keys are stored in GitHub. One-time setup: after applying the foundation, add a repository variable (Settings → Secrets and variables → Actions → Variables) named `AWS_ROLE_ARN` with the value of the foundation's `github_actions_role_arn` output. Only pushes to `main` of this repository can assume that role, and it can only push to the three ECR repositories.
+
 ## Project Structure
 
 ```text
 IS_Final/
+├── .github/workflows/      # CI: tests and lint, then ECR image push on main
 ├── agents/                 # Agent implementations
 │   ├── activities_agent/
 │   ├── flight_agent/

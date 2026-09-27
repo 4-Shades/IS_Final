@@ -128,6 +128,105 @@ resource "aws_lb" "host" {
 
   # POST /run can wait up to DOWNSTREAM_TIMEOUT_SECONDS (150s) on the agents.
   idle_timeout = 180
+
+  drop_invalid_header_fields = true
+
+  dynamic "access_logs" {
+    for_each = var.alb_logs_bucket == "" ? [] : [var.alb_logs_bucket]
+
+    content {
+      bucket  = access_logs.value
+      prefix  = "host"
+      enabled = true
+    }
+  }
+}
+
+# Lives in this module so it is created and destroyed with the ALB during spin up / spin down.
+resource "aws_wafv2_web_acl" "host" {
+  name  = "${var.name_prefix}-host"
+  scope = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "rate-limit-per-ip"
+    priority = 0
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.waf_rate_limit_per_5_minutes
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name_prefix}-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "aws-common"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesCommonRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name_prefix}-aws-common"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "aws-known-bad-inputs"
+    priority = 2
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name_prefix}-aws-known-bad-inputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.name_prefix}-host"
+    sampled_requests_enabled   = true
+  }
+}
+
+resource "aws_wafv2_web_acl_association" "host" {
+  resource_arn = aws_lb.host.arn
+  web_acl_arn  = aws_wafv2_web_acl.host.arn
 }
 
 resource "aws_lb_target_group" "host" {
@@ -209,10 +308,16 @@ resource "aws_ecs_task_definition" "agent" {
       }
     ], local.common_environment)
 
-    secrets = var.llm_provider == "openai" && contains(local.llm_agents, each.key) ? [{
-      name      = "OPENAI_API_KEY"
-      valueFrom = var.openai_api_key_parameter_arn
-    }] : []
+    secrets = concat(
+      var.llm_provider == "openai" && contains(local.llm_agents, each.key) ? [{
+        name      = "OPENAI_API_KEY"
+        valueFrom = var.openai_api_key_parameter_arn
+      }] : [],
+      each.key == "host" ? [{
+        name      = "HOST_API_KEY"
+        valueFrom = var.host_api_key_parameter_arn
+      }] : [],
+    )
 
     healthCheck = {
       command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${each.value.port}/healthz')\""]

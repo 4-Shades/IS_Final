@@ -170,11 +170,13 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  openai_api_key_parameter_arn = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.openai_api_key_parameter_name}"
+  ssm_parameter_arn_prefix     = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter"
+  openai_api_key_parameter_arn = "${local.ssm_parameter_arn_prefix}${var.openai_api_key_parameter_name}"
+  host_api_key_parameter_arn   = "${local.ssm_parameter_arn_prefix}${var.host_api_key_parameter_name}"
 }
 
-# ECS fetches the key at task start with the execution role and injects it as
-# an environment variable; the default aws/ssm KMS key needs no extra grant.
+# ECS fetches these at task start with the execution role and injects them as
+# environment variables; the default aws/ssm KMS key needs no extra grant.
 resource "aws_iam_role_policy" "ecs_task_execution_openai_key" {
   name = "read-openai-api-key"
   role = aws_iam_role.ecs_task_execution.id
@@ -182,9 +184,12 @@ resource "aws_iam_role_policy" "ecs_task_execution_openai_key" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["ssm:GetParameters"]
-      Resource = local.openai_api_key_parameter_arn
+      Effect = "Allow"
+      Action = ["ssm:GetParameters"]
+      Resource = [
+        local.openai_api_key_parameter_arn,
+        local.host_api_key_parameter_arn,
+      ]
     }]
   })
 }
@@ -234,5 +239,136 @@ resource "aws_ecr_lifecycle_policy" "agent" {
         type = "expire"
       }
     }]
+  })
+}
+
+# GitHub Actions pushes agent images to ECR through OIDC, so no long-lived
+# AWS keys are stored in GitHub. Only pushes to main of one repo can assume it.
+resource "aws_iam_openid_connect_provider" "github" {
+  count = var.create_github_oidc_provider ? 1 : 0
+
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.create_github_oidc_provider ? 0 : 1
+
+  url = "https://token.actions.githubusercontent.com"
+}
+
+locals {
+  github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+}
+
+resource "aws_iam_role" "github_actions" {
+  name = "${var.name_prefix}-github-actions"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = local.github_oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "github_actions_ecr_push" {
+  name = "push-agent-images"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+        ]
+        Resource = [for repository in aws_ecr_repository.agent : repository.arn]
+      },
+    ]
+  })
+}
+
+# ALB access logs: an audit trail of requests to the public Host API.
+resource "aws_s3_bucket" "alb_logs" {
+  bucket_prefix = "${var.name_prefix}-alb-logs-"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    id     = "expire"
+    status = "Enabled"
+    filter {}
+
+    expiration {
+      days = var.alb_log_retention_days
+    }
+  }
+}
+
+# ALB log delivery in regions launched before August 2022 (including us-east-1)
+# writes as the regional ELB account; newer regions use the log delivery service.
+data "aws_elb_service_account" "current" {}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { AWS = data.aws_elb_service_account.current.arn }
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+      },
+      {
+        Effect    = "Allow"
+        Principal = { Service = "logdelivery.elasticloadbalancing.amazonaws.com" }
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+      },
+    ]
   })
 }

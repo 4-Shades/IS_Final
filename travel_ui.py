@@ -6,12 +6,20 @@ import streamlit as st
 from shared.config import get_settings
 
 
-def _host_service_url() -> str:
+def _secret(name: str) -> str | None:
     try:
-        configured_url = st.secrets.get("HOST_SERVICE_URL")
+        return st.secrets.get(name)
     except (FileNotFoundError, KeyError):
-        configured_url = None
-    return (configured_url or get_settings().host_service_url).rstrip("/")
+        return None
+
+
+def _host_service_url() -> str:
+    return (_secret("HOST_SERVICE_URL") or get_settings().host_service_url).rstrip("/")
+
+
+def _host_headers() -> dict[str, str]:
+    api_key = _secret("HOST_API_KEY") or get_settings().host_api_key
+    return {"X-API-Key": api_key} if api_key else {}
 
 
 def _show_offers(title: str, offers: list[dict] | None) -> None:
@@ -53,7 +61,9 @@ if st.button("Plan My Trip ✨"):
             response = requests.post(
                 f"{_host_service_url()}/run",
                 json=payload,
-                timeout=35,
+                headers=_host_headers(),
+                # The cloud Host waits up to DOWNSTREAM_TIMEOUT_SECONDS (150) on the agents.
+                timeout=180,
             )
             response.raise_for_status()
             data = response.json()
@@ -75,4 +85,7 @@ if st.button("Plan My Trip ✨"):
         _show_offers("Activities", activities)
 
         if not flights and not stays and not activities:
-            st.info("The host agent did not return any trip options. Try adjusting the travel window or budget.")
+            st.info(
+                "The host agent did not return any trip options. "
+                "Try adjusting the travel window or budget."
+            )

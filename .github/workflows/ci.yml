@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - run: pip install -r requirements/dev.txt
+      - run: python -m pytest -q
+      - run: python -m ruff check .
+
+  # Pushes the agent image to ECR so it is ready for a manual `terraform apply`
+  # of infra/aws/ecs-agents. Deploying stays manual because the stack is spun
+  # down between uses.
+  build-and-push:
+    # Skipped until the AWS_ROLE_ARN repository variable is set (see README).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          docker build -t travel-agent:"$TAG" .
+          for agent in host stay activities; do
+            docker tag travel-agent:"$TAG" "$REGISTRY/travel-$agent-agent:$TAG"
+            docker push "$REGISTRY/travel-$agent-agent:$TAG"
+          done
+          echo "Pushed image tag \`$TAG\`; set image_tag = \"$TAG\" in infra/aws/ecs-agents/terraform.tfvars to deploy it." >> "$GITHUB_STEP_SUMMARY"
