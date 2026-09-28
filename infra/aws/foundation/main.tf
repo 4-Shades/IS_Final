@@ -353,6 +353,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
 # writes as the regional ELB account; newer regions use the log delivery service.
 data "aws_elb_service_account" "current" {}
 
+# The ALB writes to <prefix>/AWSLogs/<account>/...; allow it with or without a prefix.
+locals {
+  alb_log_object_arns = [
+    "${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
+    "${aws_s3_bucket.alb_logs.arn}/*/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
+  ]
+}
+
 resource "aws_s3_bucket_policy" "alb_logs" {
   bucket = aws_s3_bucket.alb_logs.id
 
@@ -363,13 +371,13 @@ resource "aws_s3_bucket_policy" "alb_logs" {
         Effect    = "Allow"
         Principal = { AWS = data.aws_elb_service_account.current.arn }
         Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Resource  = local.alb_log_object_arns
       },
       {
         Effect    = "Allow"
         Principal = { Service = "logdelivery.elasticloadbalancing.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Resource  = local.alb_log_object_arns
       },
     ]
   })
