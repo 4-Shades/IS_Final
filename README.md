@@ -224,6 +224,8 @@ Setup:
 3. In `infra/aws/ecs-agents/terraform.tfvars`, set `otel_exporter_otlp_endpoint` to the endpoint and `otel_headers_parameter_arn` to the foundation output of the same name. Applies on the next spin up.
 4. For Railway Flight, add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` as service variables.
 
+A ready-made dashboard is in [`infra/grafana/travel-planner-dashboard.json`](infra/grafana/travel-planner-dashboard.json): trip plans served, rejected requests, estimated OpenAI cost, LLM error rate, request and LLM latency (p95), LLM calls by outcome, and tokens used. Import it with **Dashboards → New → Import → Upload dashboard JSON file**, and pick your stack's Prometheus data source (named like `grafanacloud-<stack>-prom`).
+
 In Grafana, OTLP metric names become Prometheus-style: dots turn into underscores and a unit suffix is added, and the service appears as `job="travel-planner/travel-stay"`. Starting queries (confirm exact names in **Explore**):
 
 ```promql
@@ -288,6 +290,7 @@ IS_Final/
 ├── infra/
 │   ├── aws/foundation/     # Cloud: Terraform for VPC, subnets, security groups, IAM, ECR
 │   ├── aws/ecs-agents/     # Cloud: Terraform for Host, Stay, Activities on ECS + ALB
+│   ├── grafana/            # Cloud: importable Grafana dashboard
 │   ├── ollama/Dockerfile   # Self-hosted: Ollama image for a separate server
 │   └── kubernetes/         # Self-hosted: Kubernetes Ollama deployment
 ├── requirements/
