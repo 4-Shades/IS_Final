@@ -202,6 +202,36 @@ The Host is the only public entry point. It is protected by:
 
 **Not yet: HTTPS.** Traffic to the load balancer is plain HTTP, so the API key travels unencrypted. HTTPS needs a domain name, because AWS certificates can't be issued for the load balancer's own `elb.amazonaws.com` address. Once you have a domain, the path is: a Route53 hosted zone, a DNS-validated ACM certificate, an HTTPS listener on port 443 with port 80 redirecting to it, and `HOST_SERVICE_URL` updated to `https://`.
 
+### Observability (Grafana Cloud)
+
+Each agent can push metrics to Grafana Cloud over OpenTelemetry (OTLP). It's off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so self-hosted runs need no Grafana account. Metrics are pushed rather than scraped because the ECS tasks scale to zero every night, leaving nothing for a scraper to reach.
+
+What's exported, per agent (`travel-host`, `travel-stay`, `travel-activities`, `travel-flight`):
+
+- **HTTP requests:** count, latency, and status code per route, from FastAPI instrumentation.
+- **LLM calls:** `llm.request.duration` by provider, model, and outcome (`success`/`error`).
+- **Tokens:** `llm.token.usage` by provider, model, and type (`prompt`/`completion`). For OpenAI this is what you're billed for.
+
+Setup:
+
+1. In the Grafana Cloud portal, open your stack's **OpenTelemetry** tile → **Configure**, and generate a token. Copy the two values it shows: `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`.
+2. Store the headers value in SSM (it contains the token):
+
+   ```bash
+   MSYS_NO_PATHCONV=1 aws ssm put-parameter --region us-east-1 --name /travel/otel-otlp-headers --type SecureString --value "Authorization=Basic%20..."
+   ```
+
+3. In `infra/aws/ecs-agents/terraform.tfvars`, set `otel_exporter_otlp_endpoint` to the endpoint and `otel_headers_parameter_arn` to the foundation output of the same name. Applies on the next spin up.
+4. For Railway Flight, add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` as service variables.
+
+In Grafana, OTLP metric names become Prometheus-style: dots turn into underscores and a unit suffix is added, and the service appears as `job="travel-planner/travel-stay"`. Starting queries (confirm exact names in **Explore**):
+
+```promql
+sum by (job) (rate(http_server_duration_milliseconds_count[5m]))
+histogram_quantile(0.95, sum by (le, llm_provider) (rate(llm_request_duration_seconds_bucket[5m])))
+sum by (token_type) (increase(llm_token_usage_total[1h]))
+```
+
 ## Configuration
 
 Configuration is loaded from environment variables (`.env` when self-hosted; Terraform, the Railway dashboard, and Streamlit secrets in the cloud).
@@ -220,6 +250,8 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | `150` | How long the Host waits for each specialist agent. |
 | `HOST_SERVICE_URL` | `http://localhost:8000` | The `host_public_url` output | Where the UI sends requests. |
 | `HOST_API_KEY` | Unset (Host is open) | From SSM on AWS; a Streamlit secret for the UI | Key the Host requires as `X-API-Key` on `POST /run`, and that the UI sends. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Unset (metrics off) | Grafana Cloud OTLP endpoint | Where agents push metrics. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Unset | From SSM on AWS; a Railway variable for Flight | Grafana Cloud auth header. Contains a token; never commit it. |
 | `OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, `GROUND_TRANSPORT_ENABLED` | `false` | `false` | Rollout flags for the open travel-data providers. |
 
 Do not commit `.env` or API keys. Use `.env.example` as the starting template.

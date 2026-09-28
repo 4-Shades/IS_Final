@@ -57,6 +57,12 @@ variable "host_api_key_parameter_name" {
   default     = "/travel/host-api-key"
 }
 
+variable "otel_headers_parameter_name" {
+  type        = string
+  description = "SSM SecureString parameter holding OTEL_EXPORTER_OTLP_HEADERS for Grafana Cloud (Authorization=Basic ...)."
+  default     = "/travel/otel-otlp-headers"
+}
+
 variable "alb_log_retention_days" {
   type        = number
   description = "Days to keep ALB access logs in S3."

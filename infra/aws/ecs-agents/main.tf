@@ -284,6 +284,10 @@ resource "aws_ecs_task_definition" "agent" {
       condition     = var.llm_provider != "ollama" || var.ollama_base_url != ""
       error_message = "Set ollama_base_url when llm_provider = ollama."
     }
+    precondition {
+      condition     = var.otel_exporter_otlp_endpoint == "" || var.otel_headers_parameter_arn != ""
+      error_message = "Set otel_headers_parameter_arn when otel_exporter_otlp_endpoint is set."
+    }
   }
 
   container_definitions = jsonencode([{
@@ -306,7 +310,16 @@ resource "aws_ecs_task_definition" "agent" {
         name  = "PORT"
         value = tostring(each.value.port)
       }
-    ], local.common_environment)
+      ], local.common_environment, var.otel_exporter_otlp_endpoint == "" ? [] : [
+      {
+        name  = "OTEL_EXPORTER_OTLP_ENDPOINT"
+        value = var.otel_exporter_otlp_endpoint
+      },
+      {
+        name  = "OTEL_SERVICE_NAME"
+        value = "travel-${each.key}"
+      }
+    ])
 
     secrets = concat(
       var.llm_provider == "openai" && contains(local.llm_agents, each.key) ? [{
@@ -317,6 +330,10 @@ resource "aws_ecs_task_definition" "agent" {
         name      = "HOST_API_KEY"
         valueFrom = var.host_api_key_parameter_arn
       }] : [],
+      var.otel_exporter_otlp_endpoint == "" ? [] : [{
+        name      = "OTEL_EXPORTER_OTLP_HEADERS"
+        valueFrom = var.otel_headers_parameter_arn
+      }],
     )
 
     healthCheck = {

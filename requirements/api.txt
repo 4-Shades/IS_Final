@@ -4,3 +4,7 @@ httpx==0.28.1
 pydantic==2.11.5
 python-dotenv==1.1.0
 uvicorn[standard]==0.34.3
+# Metrics export (off unless OTEL_EXPORTER_OTLP_ENDPOINT is set)
+opentelemetry-sdk==1.45.0
+opentelemetry-exporter-otlp-proto-http==1.45.0
+opentelemetry-instrumentation-fastapi==0.66b0

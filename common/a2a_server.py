@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 
+from common.telemetry import instrument_app
 from shared.schemas import TravelRequest
 
 logger = logging.getLogger(__name__)
@@ -52,4 +53,5 @@ def create_app(
         )
         return await execute(payload)
 
+    instrument_app(app, service_name)
     return app

@@ -15,6 +15,9 @@ openai_api_key_parameter_arn = "arn:aws:ssm:us-east-1:123456789012:parameter/tra
 host_api_key_parameter_arn   = "arn:aws:ssm:us-east-1:123456789012:parameter/travel/host-api-key"
 alb_logs_bucket              = "travel-alb-logs-xxxxxxxx"
 waf_rate_limit_per_5_minutes = 2000
+# Optional Grafana Cloud metrics; leave empty to disable.
+otel_exporter_otlp_endpoint  = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+otel_headers_parameter_arn   = "arn:aws:ssm:us-east-1:123456789012:parameter/travel/otel-otlp-headers"
 # Only used when llm_provider = "ollama":
 # ollama_base_url            = "https://your-ollama-domain"
 desired_count       = 1

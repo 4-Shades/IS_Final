@@ -3,16 +3,42 @@
 from __future__ import annotations
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
 import httpx
+from opentelemetry import metrics
 from pydantic import BaseModel, ValidationError
 
 from shared.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
+
+# No-ops unless common.telemetry installs a meter provider.
+_meter = metrics.get_meter("travel.llm")
+_request_duration = _meter.create_histogram(
+    "llm.request.duration", unit="s", description="Duration of structured LLM calls."
+)
+_token_usage = _meter.create_counter(
+    "llm.token.usage", unit="{token}", description="Tokens consumed by LLM calls."
+)
+
+
+def _record_duration(provider: str, model: str, started: float, outcome: str) -> None:
+    _request_duration.record(
+        time.perf_counter() - started,
+        {"llm.provider": provider, "llm.model": model, "outcome": outcome},
+    )
+
+
+def _record_tokens(provider: str, model: str, prompt: Any, completion: Any) -> None:
+    for token_type, count in (("prompt", prompt), ("completion", completion)):
+        if isinstance(count, int) and count > 0:
+            _token_usage.add(
+                count, {"llm.provider": provider, "llm.model": model, "token.type": token_type}
+            )
 
 
 class LLMError(RuntimeError):
@@ -64,16 +90,25 @@ class OllamaClient(LLMClient):
                 {"role": "user", "content": prompt},
             ],
         }
+        started, outcome = time.perf_counter(), "error"
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout_seconds), transport=self.transport
             ) as client:
                 response = await client.post(f"{self.base_url}/api/chat", json=payload)
                 response.raise_for_status()
-                content = response.json()["message"]["content"]
-            return response_type.model_validate_json(content)
+                body = response.json()
+                _record_tokens(
+                    "ollama", self.model, body.get("prompt_eval_count"), body.get("eval_count")
+                )
+                content = body["message"]["content"]
+            result = response_type.model_validate_json(content)
+            outcome = "success"
+            return result
         except (httpx.HTTPError, KeyError, TypeError, ValidationError) as exc:
             raise LLMError(f"Ollama did not return a valid {response_type.__name__}") from exc
+        finally:
+            _record_duration("ollama", self.model, started, outcome)
 
     async def embed(self, text: str) -> list[float]:
         payload = {
@@ -172,6 +207,7 @@ class OpenAICompatibleClient(LLMClient):
                 {"role": "user", "content": prompt},
             ],
         }
+        started, outcome = time.perf_counter(), "error"
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout_seconds), transport=self.transport
@@ -182,8 +218,18 @@ class OpenAICompatibleClient(LLMClient):
                     json=payload,
                 )
                 response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
-            return response_type.model_validate_json(content)
+                body = response.json()
+                usage = body.get("usage") or {}
+                _record_tokens(
+                    "openai",
+                    self.model,
+                    usage.get("prompt_tokens"),
+                    usage.get("completion_tokens"),
+                )
+                content = body["choices"][0]["message"]["content"]
+            result = response_type.model_validate_json(content)
+            outcome = "success"
+            return result
         except httpx.HTTPStatusError as exc:
             raise LLMError(
                 f"OpenAI-compatible provider returned HTTP {exc.response.status_code} "
@@ -194,6 +240,8 @@ class OpenAICompatibleClient(LLMClient):
                 f"OpenAI-compatible provider did not return a valid {response_type.__name__}: "
                 f"{type(exc).__name__}: {str(exc)[:300]}"
             ) from exc
+        finally:
+            _record_duration("openai", self.model, started, outcome)
 
     async def embed(self, text: str) -> list[float]:
         if not self.api_key:

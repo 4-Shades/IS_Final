@@ -90,6 +90,18 @@ variable "waf_rate_limit_per_5_minutes" {
   default     = 2000
 }
 
+variable "otel_exporter_otlp_endpoint" {
+  type        = string
+  description = "Grafana Cloud OTLP endpoint (e.g. https://otlp-gateway-prod-us-east-0.grafana.net/otlp). Empty disables metrics export."
+  default     = ""
+}
+
+variable "otel_headers_parameter_arn" {
+  type        = string
+  description = "ARN of the SSM SecureString holding OTEL_EXPORTER_OTLP_HEADERS (foundation output otel_headers_parameter_arn)."
+  default     = ""
+}
+
 variable "ollama_base_url" {
   type        = string
   description = "Ollama URL reachable from the ECS tasks. Only used when llm_provider = ollama."

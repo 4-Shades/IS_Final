@@ -49,3 +49,7 @@ output "github_actions_role_arn" {
 output "alb_logs_bucket" {
   value = aws_s3_bucket.alb_logs.bucket
 }
+
+output "otel_headers_parameter_arn" {
+  value = local.otel_headers_parameter_arn
+}

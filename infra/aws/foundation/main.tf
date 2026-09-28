@@ -173,6 +173,7 @@ locals {
   ssm_parameter_arn_prefix     = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter"
   openai_api_key_parameter_arn = "${local.ssm_parameter_arn_prefix}${var.openai_api_key_parameter_name}"
   host_api_key_parameter_arn   = "${local.ssm_parameter_arn_prefix}${var.host_api_key_parameter_name}"
+  otel_headers_parameter_arn   = "${local.ssm_parameter_arn_prefix}${var.otel_headers_parameter_name}"
 }
 
 # ECS fetches these at task start with the execution role and injects them as
@@ -189,6 +190,7 @@ resource "aws_iam_role_policy" "ecs_task_execution_openai_key" {
       Resource = [
         local.openai_api_key_parameter_arn,
         local.host_api_key_parameter_arn,
+        local.otel_headers_parameter_arn,
       ]
     }]
   })
