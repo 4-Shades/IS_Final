@@ -73,15 +73,24 @@ Security group rules are owned by `../foundation`; this module only attaches the
 
 ## Spin down / spin up
 
-The ALB bills about $24/month whether or not anything is running, and it cannot be paused. When the stack will be idle for days, destroy this module and re-apply it when needed. Run both from this directory.
+The ALB and WAF bill about $32/month whether or not anything is running, and they cannot be paused. When the stack will be idle for days, destroy this module and re-apply it when needed. Run both from this directory.
 
-If your AWS CLI uses `aws login`, export its credentials for Terraform first:
+This module also manages the `AWS_ROLE_ARN` GitHub Actions variable (`manage_github_ci_variable`): it is created on spin up and deleted on spin down, so CI only pushes images to ECR while the stack is up. Changing it needs a GitHub token.
+
+**One-time setup:** create a fine-grained personal access token at GitHub → Settings → Developer settings → Fine-grained tokens, limited to the `4-Shades/IS_Final` repository, with the repository permission **Variables: Read and write** (nothing else). Store it in SSM:
+
+```bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --region us-east-1 --name /travel/github-token --type SecureString --value "github_pat_..."
+```
+
+**Before each spin down or spin up,** load AWS and GitHub credentials into the shell:
 
 ```bash
 eval "$(aws configure export-credentials --format env)"
+export GITHUB_TOKEN=$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --region us-east-1 --name /travel/github-token --with-decryption --query Parameter.Value --output text)
 ```
 
-Spin down (removes the ALB, ECS cluster, services, Cloud Map namespace, and log groups; about 2-5 minutes):
+Spin down (removes the ALB, WAF, ECS cluster, services, Cloud Map namespace, log groups, and the `AWS_ROLE_ARN` variable; about 2-5 minutes):
 
 ```bash
 terraform plan -destroy -var-file=terraform.tfvars -out=down.tfplan
@@ -99,6 +108,8 @@ aws ecs wait services-stable --region us-east-1 --cluster travel-agents --servic
 
 The ALB gets a new DNS name on every spin up, so re-check `host_public_url` and update any client that points at it.
 
-Spinning down keeps everything in `../foundation` (VPC, subnets, security groups, IAM roles, ECR images) and the `/travel/openai-api-key` parameter, none of which cost anything except a few cents of ECR storage. Spin up reuses them, so no rebuild or image push is needed. Log history in CloudWatch is deleted with the log groups.
+Because CI stops pushing images while the stack is down, `image_tag` must name an image that is already in ECR, usually the last one CI pushed before the spin down. To deploy code committed while the stack was down, push any commit to `main` after spinning up (CI then builds it), set `image_tag` to that commit's short SHA, and apply again. To skip the GitHub variable entirely, set `manage_github_ci_variable = false` and no token is needed.
+
+Spinning down keeps everything in `../foundation` (VPC, subnets, security groups, IAM roles, ECR images) and the SSM parameters, none of which cost anything except a few cents of ECR storage. Log history in CloudWatch is deleted with the log groups.
 
 The Railway Flight service is separate and keeps running; pause it in the Railway dashboard if you also want to stop its usage.

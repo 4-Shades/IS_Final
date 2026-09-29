@@ -253,13 +253,13 @@ sum by (token_type) (increase(llm_token_usage_total[1h]))
 
 ### Reactivating the cloud deployment
 
-1. **AWS:** spin the ECS module up with the [spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) commands, setting `image_tag` to the latest tag GitHub Actions pushed (shown in the run summary). It takes about 10 minutes and gets a new `host_public_url`.
+1. **AWS:** spin the ECS module up with the [spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) commands, setting `image_tag` to an image already in ECR (the last tag CI pushed before the spin down). It takes about 10 minutes, gets a new `host_public_url`, and recreates the `AWS_ROLE_ARN` variable so CI resumes pushing images. To deploy code committed while dormant, push to `main` afterwards and apply again with the new tag.
 2. **Railway:** resume the Flight service in the Railway dashboard. If it's still on a trial plan, check the remaining credit first.
 3. **Streamlit Cloud:** set `HOST_SERVICE_URL` to the new `host_public_url`, and `HOST_API_KEY` to the value in `/travel/host-api-key`.
 4. **Grafana Cloud:** nothing to change. Metrics start arriving as soon as traffic does, as long as the stack still exists. If the trial has ended, confirm the free tier is active, and if the token was deleted, generate a new one and update `/travel/otel-otlp-headers` and the Railway variable.
 5. **Check it:** a `POST /run` without `X-API-Key` should return `401`, and with it a trip plan.
 
-While dormant, GitHub Actions still pushes an image to ECR on every push to `main`. That costs a few cents a month (ECR keeps the five newest images per repository). To stop it, delete the `AWS_ROLE_ARN` repository variable; the job then skips.
+While dormant, GitHub Actions skips the image push: the ECS module deletes the `AWS_ROLE_ARN` repository variable on spin down and recreates it on spin up. Spinning up and down therefore needs a GitHub token in `GITHUB_TOKEN`; see [Spin down / spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) for the one-time token setup.
 
 ## Configuration
 
@@ -299,7 +299,7 @@ python -m ruff check .
 - **`test`:** the same `pytest` and `ruff` commands as above.
 - **`build-and-push`** (pushes to `main` only, after tests pass): builds the agent image and pushes it to the three ECR repositories, tagged with the short commit SHA. It does not deploy; spinning up and applying the ECS module stays manual.
 
-It signs in to AWS through GitHub's OIDC provider, so no AWS keys are stored in GitHub. One-time setup: after applying the foundation, add a repository variable (Settings → Secrets and variables → Actions → Variables) named `AWS_ROLE_ARN` with the value of the foundation's `github_actions_role_arn` output. Only pushes to `main` of this repository can assume that role, and it can only push to the three ECR repositories.
+It signs in to AWS through GitHub's OIDC provider, so no AWS keys are stored in GitHub. The job needs the `AWS_ROLE_ARN` repository variable (the foundation's `github_actions_role_arn` output). The ECS module creates it on spin up and deletes it on spin down, so images are only pushed while the cloud stack is running; with the stack down, `build-and-push` shows as skipped. Only pushes to `main` of this repository can assume that role, and it can only push to the three ECR repositories.
 
 ## Project Structure
 

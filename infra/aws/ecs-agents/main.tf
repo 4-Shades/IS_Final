@@ -451,3 +451,20 @@ resource "aws_appautoscaling_scheduled_action" "stop" {
 
   depends_on = [aws_appautoscaling_scheduled_action.start]
 }
+
+# CI pushes images to ECR only while this variable exists, so tie it to the
+# stack's lifecycle: created on spin up, deleted on spin down.
+resource "github_actions_variable" "aws_role_arn" {
+  count = var.manage_github_ci_variable ? 1 : 0
+
+  repository    = split("/", var.github_repository)[1]
+  variable_name = "AWS_ROLE_ARN"
+  value         = var.github_actions_role_arn
+
+  lifecycle {
+    precondition {
+      condition     = var.github_actions_role_arn != ""
+      error_message = "Set github_actions_role_arn (foundation output) when manage_github_ci_variable = true."
+    }
+  }
+}

@@ -172,3 +172,21 @@ variable "log_retention_days" {
   type    = number
   default = 14
 }
+
+variable "manage_github_ci_variable" {
+  type        = bool
+  description = "Create the AWS_ROLE_ARN GitHub Actions variable with the stack and delete it on spin down, so CI only pushes images while the stack is up. Needs GITHUB_TOKEN."
+  default     = true
+}
+
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository (owner/name) whose AWS_ROLE_ARN Actions variable this module manages."
+  default     = "4-Shades/IS_Final"
+}
+
+variable "github_actions_role_arn" {
+  type        = string
+  description = "Foundation output github_actions_role_arn; the value of the AWS_ROLE_ARN variable."
+  default     = ""
+}
