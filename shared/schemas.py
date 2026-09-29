@@ -108,6 +108,29 @@ class ActivitiesResponse(BaseModel):
         return self
 
 
+class SourceCitation(BaseModel):
+    """A retrieved guidance passage's source, shown to the user for attribution."""
+
+    title: str
+    url: str
+    license: str | None = None
+
+
+# The *Response models above are the JSON schemas sent to the language model as its
+# output format. Sources must never appear there, or the model would invent citations;
+# agents attach retrieved sources through these subclasses instead.
+class FlightAgentResponse(FlightResponse):
+    sources: list[SourceCitation] = Field(default_factory=list)
+
+
+class StayAgentResponse(StayResponse):
+    sources: list[SourceCitation] = Field(default_factory=list)
+
+
+class ActivitiesAgentResponse(ActivitiesResponse):
+    sources: list[SourceCitation] = Field(default_factory=list)
+
+
 class ServiceError(BaseModel):
     service: Literal["flights", "stay", "activities"]
     message: str
@@ -120,3 +143,4 @@ class TripPlanResponse(BaseModel):
     stay: list[StayOffer] = Field(default_factory=list)
     activities: list[ActivityOffer] = Field(default_factory=list)
     errors: list[ServiceError] = Field(default_factory=list)
+    sources: list[SourceCitation] = Field(default_factory=list)

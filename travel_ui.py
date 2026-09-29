@@ -84,6 +84,14 @@ if st.button("Plan My Trip ✨"):
         _show_offers("Accommodation", stays)
         _show_offers("Activities", activities)
 
+        sources = data.get("sources") or []
+        if sources:
+            with st.expander(f"Sources ({len(sources)})"):
+                st.caption("Suggestions drew on these travel-guide excerpts.")
+                for source in sources:
+                    license_note = f" ({source['license']})" if source.get("license") else ""
+                    st.markdown(f"- [{source['title']}]({source['url']}){license_note}")
+
         if not flights and not stays and not activities:
             st.info(
                 "The host agent did not return any trip options. "

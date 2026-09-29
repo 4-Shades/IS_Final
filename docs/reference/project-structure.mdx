@@ -15,7 +15,7 @@ IS_Final/
 │   ├── a2a_server.py          Builds each agent's FastAPI app, including the API-key check
 │   ├── a2a_client.py          The Host's HTTP client for calling agents
 │   ├── llm.py                 Ollama and OpenAI clients, structured output, LLM metrics
-│   ├── rag.py                 Curated guidance added to prompts
+│   ├── rag/                   Retrieval: Wikivoyage ingest, Chroma index, guidance lookup
 │   ├── telemetry.py           Optional metrics export over OTLP
 │   ├── travel_data.py         Geocoding, places, and weather adapters (not yet used by agents)
 │   └── serve.py               Container entry point; starts the agent named by APP_MODULE
@@ -29,6 +29,7 @@ IS_Final/
 │   ├── grafana/               Importable Grafana dashboard
 │   ├── ollama/Dockerfile      Ollama image for hosting it on another server
 │   └── kubernetes/            Kubernetes manifest for Ollama
+├── data/rag/destinations.txt  Destinations to ingest (the index and cache under data/rag/ are gitignored)
 ├── docs/                      This documentation (Mintlify)
 ├── requirements/
 │   ├── api.txt                Agent dependencies
@@ -36,7 +37,7 @@ IS_Final/
 │   └── dev.txt                Both, plus pytest and ruff
 ├── requirements.txt           Streamlit Cloud entry point; installs requirements/ui.txt
 ├── Dockerfile                 Two images: api-runtime (default, agents) and ui-runtime
-├── compose.yaml               Runs Ollama, the agents, and the UI locally
+├── compose.yaml               Runs Ollama, the agents, and the UI locally; the ingest profile builds the index
 ├── run.py                     Starts the four agents and the UI without Docker
 ├── travel_ui.py               Streamlit UI
 ├── .env.example               Template for .env

@@ -20,10 +20,25 @@ All settings are environment variables, read in `shared/config.py`. There are no
 | `LLM_TIMEOUT_SECONDS` | `90` | `120` | How long an agent waits for one model call. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | not set | Ollama's address. Docker Compose always uses `http://ollama:11434`, ignoring `.env`. |
 | `OLLAMA_MODEL` | `llama3.2:3b` | not set | Model used to generate suggestions. |
-| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | not set | Read, but currently unused: no agent calls the embedding model. |
+| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | not set | Embeds guidance passages and queries when `LLM_PROVIDER=ollama`. See [Retrieval](#retrieval). |
 | `OPENAI_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` | OpenAI model. |
 | `OPENAI_API_KEY` | none | SSM `/travel/openai-api-key` (Stay, Activities); Railway variable (Flight) | Required when `LLM_PROVIDER=openai`. Secret. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | same | Any OpenAI-compatible Chat Completions endpoint. |
+
+## Retrieval
+
+Settings for the Wikivoyage guidance added to Flight, Stay, and Activities prompts. See [Build the guidance index](/how-to/build-the-guidance-index).
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RAG_ENABLED` | `true` | Turns retrieval on. With no index built, retrieval is skipped with one log line, so leaving it on is harmless. |
+| `RAG_INDEX_DIR` | `data/rag/index` | Where the Chroma index is read and written, relative to the working directory. Docker Compose mounts the `rag-index` volume there. |
+| `RAG_TOP_K` | `2` | Passages retrieved per agent. Each adds prompt text, which slows CPU-only Ollama. |
+| `RAG_MIN_SCORE` | `0` | Drop passages with a similarity score below this (0 to 1). |
+| `RAG_TIMEOUT_SECONDS` | `30` | Give up on retrieval after this long and plan without guidance. The slow case is the first lookup after Ollama has unloaded the embedding model. |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model when `LLM_PROVIDER=openai`. |
+
+The embedding model follows `LLM_PROVIDER`: `OLLAMA_EMBEDDING_MODEL` for Ollama, `OPENAI_EMBEDDING_MODEL` for OpenAI. An index only works with the model that built it; after changing either, rebuild with `--rebuild`.
 
 ## Service addresses and timeouts
 

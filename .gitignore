@@ -57,3 +57,7 @@ model-cache/
 # Test and local tool output
 test-results/
 reports/
+
+# RAG index and downloaded articles (rebuild with python -m common.rag.ingest)
+data/rag/index/
+data/rag/cache/

@@ -35,20 +35,38 @@ A model call can fail in several ways: the provider is unreachable, it times out
 
 ## Curated guidance
 
-Before asking the model, each agent adds relevant curated guidance to the prompt, a small form of retrieval-augmented generation (RAG). Each piece of guidance carries its title, source URL, and license, and the prompt tells the model to use only that guidance and not invent sources or live inventory.
+Before asking the model, Flight, Stay, and Activities each look up a few passages from [Wikivoyage](https://en.wikivoyage.org), the open travel guide, and add them to the prompt. This is retrieval-augmented generation (RAG): the model writes its suggestions with relevant, real guidance in front of it, instead of relying only on what it remembers. The trip plan lists the passages as sources.
 
-A piece of guidance is used only if:
+### Building the index, ahead of time
 
-- its destination exactly matches the trip's destination,
-- its language is English,
-- its access policy is `internal` or `curated`,
-- today falls within its effective and expiry dates, and
-- it has a source URL.
+An ingest command (see [Build the guidance index](/how-to/build-the-guidance-index)) does the slow work once:
 
-The current implementation is deliberately minimal:
+1. **Download** each destination's Wikivoyage article through the MediaWiki API.
+2. **Keep useful sections.** Articles follow a standard layout (Get in, See, Do, Eat, Sleep, and so on), so each agent can be given the sections that fit its job, and the rest are left out.
+3. **Split** sections into passages of about 300 tokens, with [LlamaIndex](https://www.llamaindex.ai)'s sentence splitter, so each one is a focused piece of text.
+4. **Embed** each passage, turning it into a vector that captures its meaning, with the same provider the agents use (`embeddinggemma` on Ollama, or OpenAI's embedding model).
+5. **Store** the vectors, text, and metadata (destination, section, source URL, license, and validity dates) in [Chroma](https://www.trychroma.com), a vector database kept in a local folder.
 
-- **Three seeded documents.** Two for Paris and one for Rome, defined in `common/rag.py`. Other destinations get no guidance.
-- **No real embeddings.** Matching uses a simple word-count vector, not the embedding model. `OLLAMA_EMBEDDING_MODEL` is read but not used at runtime.
-- **In memory.** The index is rebuilt each time an agent starts.
+### Looking up guidance, per request
 
-It shows where retrieval plugs into the prompts. Using it for real means loading curated documents from storage and embedding them with an actual embedding model.
+When a request arrives, each agent:
+
+1. **Resolves the destination** to an ingested one, allowing listed aliases ("NYC" for New York City). If it isn't in the index, the agent skips retrieval entirely.
+2. **Embeds a short question** about its own topic, such as "where to stay, neighbourhoods, and accommodation in Paris." The question is deliberately not the whole prompt: dates and budgets would only add noise to the search.
+3. **Searches** for the most similar passages, filtered to that destination, the agent's own sections (Sleep, Stay safe, and Understand for Stay), English, and guidance that hasn't expired.
+4. **Adds the top two** to the prompt, clearly marked as reference material.
+
+### Designed to fail quietly
+
+Retrieval is an improvement, not a requirement. If there's no index, the destination isn't covered, the embedding model is unavailable, or the lookup takes over 30 seconds, the agent plans the trip exactly as it would without guidance, and logs why. Retrieval never turns a working trip plan into an error.
+
+### Guarding against the retrieved text
+
+Wikivoyage is edited by anyone, so retrieved text is treated as untrusted. It's wrapped in `<guidance>` markers with an instruction to treat it only as reference data, any copies of the markers inside the text are removed so it can't break out of them, and its total length is capped. Sources come from the index, never from the model: the JSON shape the model must produce has no field for them, so it can't invent citations.
+
+### Trade-offs
+
+- **Speed.** Each passage is extra text for the model to read. On a CPU-only machine, two passages per agent kept trip plans within the normal range of plan times; three made them noticeably slower. `RAG_TOP_K` controls it.
+- **Coverage.** Only ingested destinations get guidance, and only by exact name or listed alias.
+- **Freshness.** Passages expire a year after they're downloaded and are then excluded until the index is rebuilt.
+- **Large cities.** Wikivoyage splits big cities into district articles. The planner reads only the main article, so some sections, like Sleep for Paris, are general rather than specific.

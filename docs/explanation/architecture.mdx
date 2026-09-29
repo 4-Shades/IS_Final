@@ -53,7 +53,7 @@ Every service validates requests and responses against the same Pydantic models 
 
 ## Curated guidance
 
-Before asking the model, Flight, Stay, and Activities add relevant curated guidance to the prompt, with its source, and tell the model not to invent sources. This is a small retrieval step, described in [Language models and structured output](/explanation/llm-providers#curated-guidance).
+Before asking the model, Flight, Stay, and Activities each look up relevant passages from Wikivoyage in a local vector index and add them to the prompt. The Host collects the passages' sources into the trip plan, and the UI lists them. This retrieval step is optional and never fails a request; see [Language models and structured output](/explanation/llm-providers#curated-guidance).
 
 ## About the name
 

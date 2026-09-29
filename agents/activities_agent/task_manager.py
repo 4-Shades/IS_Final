@@ -1,7 +1,7 @@
-from shared.schemas import ActivitiesResponse, TravelRequest
+from shared.schemas import ActivitiesAgentResponse, TravelRequest
 
 from .agent import execute
 
 
-async def run(payload: TravelRequest) -> ActivitiesResponse:
+async def run(payload: TravelRequest) -> ActivitiesAgentResponse:
     return await execute(payload)

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
+
+from pydantic import ValidationError
 
 from common.a2a_client import call_agent
 from shared.config import get_settings
@@ -10,10 +13,24 @@ from shared.schemas import (
     ActivitiesResponse,
     FlightResponse,
     ServiceError,
+    SourceCitation,
     StayResponse,
     TravelRequest,
     TripPlanResponse,
 )
+
+
+def _sources(*bodies: dict[str, Any]) -> list[SourceCitation]:
+    # Sources are attribution, not part of the plan: a malformed one is dropped, not fatal.
+    sources: dict[str, SourceCitation] = {}
+    for body in bodies:
+        for item in body.get("sources") or []:
+            try:
+                source = SourceCitation.model_validate(item)
+            except ValidationError:
+                continue
+            sources.setdefault(source.url, source)
+    return list(sources.values())
 
 
 async def run(payload: TravelRequest) -> TripPlanResponse:
@@ -42,4 +59,5 @@ async def run(payload: TravelRequest) -> TripPlanResponse:
         stay=stays.stays,
         activities=activities.activities,
         errors=errors,
+        sources=_sources(flight_body, stay_body, activities_body),
     )

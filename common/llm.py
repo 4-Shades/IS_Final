@@ -52,10 +52,6 @@ class LLMClient(ABC):
     ) -> ResponseModel:
         """Generate and independently validate a response against a Pydantic model."""
 
-    @abstractmethod
-    async def embed(self, text: str) -> list[float]:
-        """Return a vector embedding for the supplied text using the configured provider."""
-
 
 class OllamaClient(LLMClient):
     """Ollama's private native API with JSON-schema constrained output."""
@@ -63,11 +59,9 @@ class OllamaClient(LLMClient):
     def __init__(
         self, *, base_url: str, model: str, timeout_seconds: float,
         transport: httpx.AsyncBaseTransport | None = None,
-        embedding_model: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.embedding_model = embedding_model or "all-minilm"
         self.timeout_seconds = timeout_seconds
         self.transport = transport
 
@@ -109,25 +103,6 @@ class OllamaClient(LLMClient):
             raise LLMError(f"Ollama did not return a valid {response_type.__name__}") from exc
         finally:
             _record_duration("ollama", self.model, started, outcome)
-
-    async def embed(self, text: str) -> list[float]:
-        payload = {
-            "model": self.embedding_model,
-            "input": text,
-        }
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self.timeout_seconds), transport=self.transport
-            ) as client:
-                response = await client.post(f"{self.base_url}/api/embed", json=payload)
-                response.raise_for_status()
-                data = response.json()
-                embeddings = data.get("embeddings")
-                if not embeddings or not embeddings[0]:
-                    raise LLMError("Ollama did not return an embedding")
-            return embeddings[0]
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
-            raise LLMError("Ollama did not return a valid embedding") from exc
 
 
 # Keywords OpenAI strict mode may reject; Pydantic re-validates these after parsing.
@@ -243,11 +218,6 @@ class OpenAICompatibleClient(LLMClient):
         finally:
             _record_duration("openai", self.model, started, outcome)
 
-    async def embed(self, text: str) -> list[float]:
-        if not self.api_key:
-            raise LLMError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-        raise NotImplementedError("Embedding is not implemented for the OpenAI provider.")
-
 
 def get_llm_client(settings: Settings | None = None) -> LLMClient:
     settings = settings or get_settings()
@@ -256,7 +226,6 @@ def get_llm_client(settings: Settings | None = None) -> LLMClient:
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
             timeout_seconds=settings.llm_timeout_seconds,
-            embedding_model=settings.ollama_embedding_model,
         )
     if settings.llm_provider == "openai":
         return OpenAICompatibleClient(settings)

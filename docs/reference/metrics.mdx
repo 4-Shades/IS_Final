@@ -48,6 +48,19 @@ Prometheus: `llm_token_usage_total`.
 
 OpenAI bills by these counts. For `gpt-4o-mini` at list price, cost in USD is `(prompt × 0.15 + completion × 0.60) / 1,000,000`.
 
+## Retrieval metric
+
+### `rag.retrieval.duration`
+
+Histogram, in seconds: how long each guidance lookup took, recorded by Flight, Stay, and Activities. Defined in `common/rag/retrieve.py`. Lookups that don't search aren't recorded: retrieval off, a destination that isn't in the index, or a repeat answered from the in-memory cache.
+
+Prometheus: `rag_retrieval_duration_seconds_bucket`, `_count`, `_sum`.
+
+| Label | Values |
+| --- | --- |
+| `agent` | `flight`, `stay`, `activities` |
+| `outcome` | `hit` (passages found), `empty` (none matched), `error` (embedding or store failure, or timeout) |
+
 ## HTTP metrics
 
 Recorded for every agent by OpenTelemetry's FastAPI instrumentation.

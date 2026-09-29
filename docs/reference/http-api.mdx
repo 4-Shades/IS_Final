@@ -89,6 +89,7 @@ Returns `{"service": "<name>", "status": "ok", "health": "/healthz"}`.
 | `stay` | array of [stay offers](#stay-offer) | Empty if the Stay agent failed. Note the singular name. |
 | `activities` | array of [activity offers](#activity-offer) | Empty if the Activities agent failed. |
 | `errors` | array of objects | One entry per failed agent: `service` (`flights`, `stay`, or `activities`) and `message`. |
+| `sources` | array of [source citations](#source-citation) | Guidance passages the agents used, deduplicated by URL. Empty when no [guidance index](/how-to/build-the-guidance-index) covers the destination. |
 
 ```json Example
 {
@@ -103,6 +104,10 @@ Returns `{"service": "<name>", "status": "ok", "health": "/healthz"}`.
   "errors": [
     {"service": "stay", "message": "Service is temporarily unavailable."},
     {"service": "activities", "message": "Activity planner is temporarily unavailable."}
+  ],
+  "sources": [
+    {"title": "Wikivoyage: Paris, Get in", "url": "https://en.wikivoyage.org/wiki/Paris#Get_in",
+     "license": "CC BY-SA 4.0"}
   ]
 }
 ```
@@ -116,15 +121,25 @@ Returns `{"service": "<name>", "status": "ok", "health": "/healthz"}`.
 
 ### Flight response
 
-`{"flights": [flight offer, ...], "error": string or null}`. Always has at least one flight, or an `error`.
+`{"flights": [flight offer, ...], "error": string or null, "sources": [source citation, ...]}`. Always has at least one flight, or an `error`.
 
 ### Stay response
 
-`{"stays": [stay offer, ...], "error": string or null}`. Always has at least one stay, or an `error`.
+`{"stays": [stay offer, ...], "error": string or null, "sources": [source citation, ...]}`. Always has at least one stay, or an `error`.
 
 ### Activities response
 
-`{"activities": [activity offer, ...], "error": string or null}`. Always has at least one activity, or an `error`.
+`{"activities": [activity offer, ...], "error": string or null, "sources": [source citation, ...]}`. Always has at least one activity, or an `error`.
+
+In all three, `sources` comes from retrieval, never from the language model: the JSON schema the model is asked to follow has no `sources` field, so it can't invent citations.
+
+### Source citation
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `title` | string | For example `Wikivoyage: Paris, Sleep`. |
+| `url` | string | Link to the article section. |
+| `license` | string or null | For example `CC BY-SA 4.0`. |
 
 ## Offer objects
 

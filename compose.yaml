@@ -20,12 +20,16 @@ x-api-env: &api-env
   OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
   LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
   DOWNSTREAM_TIMEOUT_SECONDS: ${DOWNSTREAM_TIMEOUT_SECONDS:-30}
+  RAG_ENABLED: ${RAG_ENABLED:-true}
+  RAG_TOP_K: ${RAG_TOP_K:-2}
 
 x-api-service: &api-service
   build:
     context: .
     target: api-runtime
   restart: unless-stopped
+  volumes:
+    - rag-index:/app/data/rag/index
   networks:
     - backend
 
@@ -82,6 +86,12 @@ services:
     profiles: ["ollama"]
     restart: unless-stopped
     command: ["serve"]
+    environment:
+      # Keep the chat and embedding models loaded together; on CPU Ollama otherwise
+      # holds one model and reloads on every switch, which makes each request slower.
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      # Keep models loaded between trip plans instead of Ollama's 5-minute default.
+      OLLAMA_KEEP_ALIVE: "30m"
     volumes:
       - ollama-data:/root/.ollama
     networks:
@@ -129,6 +139,18 @@ services:
       timeout: 5s
       retries: 5
 
+  # Builds the guidance index from Wikivoyage into the shared rag-index volume:
+  #   docker compose --profile ollama --profile ingest run --rm ingest
+  ingest:
+    <<: *api-service
+    profiles: ["ingest"]
+    restart: "no"
+    command: ["python", "-m", "common.rag.ingest"]
+    environment:
+      <<: *api-env
+    healthcheck:
+      disable: true
+
   postgres:
     image: pgvector/pgvector:pg16
     profiles: ["data"]
@@ -158,5 +180,6 @@ networks:
 
 volumes:
   ollama-data:
+  rag-index:
   postgres-data:
   redis-data:

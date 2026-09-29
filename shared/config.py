@@ -27,6 +27,12 @@ class Settings:
     openai_api_key: str | None
     llm_timeout_seconds: float
     host_api_key: str | None
+    openai_embedding_model: str
+    rag_enabled: bool
+    rag_index_dir: str
+    rag_top_k: int
+    rag_min_score: float
+    rag_timeout_seconds: float
 
 
 def _service_url(name: str, default: str) -> str:
@@ -59,4 +65,10 @@ def get_settings() -> Settings:
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "90")),
         host_api_key=os.getenv("HOST_API_KEY") or None,
+        openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        rag_enabled=_bool_env("RAG_ENABLED", True),
+        rag_index_dir=os.getenv("RAG_INDEX_DIR", "data/rag/index"),
+        rag_top_k=int(os.getenv("RAG_TOP_K", "2")),
+        rag_min_score=float(os.getenv("RAG_MIN_SCORE", "0")),
+        rag_timeout_seconds=float(os.getenv("RAG_TIMEOUT_SECONDS", "30")),
     )

@@ -1,0 +1,104 @@
+---
+title: "Build the guidance index"
+description: "Download Wikivoyage articles and embed them so the agents can cite real travel guidance."
+---
+
+The Flight, Stay, and Activities agents add passages from [Wikivoyage](https://en.wikivoyage.org) to their prompts, and trip plans list those passages as sources. Build the index once, then again whenever you add destinations or change the embedding model. Until it exists, the planner works as before, without guidance or sources.
+
+**Prerequisites:** the planner set up as in the [tutorial](/tutorials/first-trip-plan) or [Run without Docker](/how-to/run-with-python), and internet access while building.
+
+## 1. Get the embedding model
+
+The index is built with the same provider as `LLM_PROVIDER`.
+
+<Tabs>
+  <Tab title="Ollama (default)">
+    ```bash
+    # Docker Compose
+    docker compose --profile ollama exec ollama ollama pull embeddinggemma
+    # Without Docker
+    ollama pull embeddinggemma
+    ```
+
+    The model is `OLLAMA_EMBEDDING_MODEL`, default `embeddinggemma` (620 MB).
+  </Tab>
+  <Tab title="OpenAI">
+    Nothing to download. The index uses `OPENAI_EMBEDDING_MODEL`, default `text-embedding-3-small`, and your `OPENAI_API_KEY`. Embedding all 20 default destinations costs a few US cents.
+  </Tab>
+</Tabs>
+
+## 2. Build the index
+
+<Tabs>
+  <Tab title="Docker Compose">
+    ```bash
+    docker compose --profile ollama --profile ingest run --rm ingest
+    ```
+
+    The index is stored in the `rag-index` Docker volume, which every agent reads.
+  </Tab>
+  <Tab title="Without Docker">
+    From the repository root, with the virtual environment active:
+
+    ```bash
+    python -m common.rag.ingest
+    ```
+
+    The index is written to `data/rag/index/`.
+  </Tab>
+</Tabs>
+
+By default this ingests the 20 destinations in `data/rag/destinations.txt`. With Ollama on a CPU it takes several minutes, printing one line per destination:
+
+```text
+Embedding with ollama:embeddinggemma into data/rag/index
+  Paris: 101 passages from https://en.wikivoyage.org/wiki/Paris
+  Tokyo: 61 passages from https://en.wikivoyage.org/wiki/Tokyo
+```
+
+## 3. Restart the agents
+
+The agents open the index when they first need it, and keep using what they found, so restart them after every build:
+
+```bash
+docker compose --profile ollama restart flight stay activities   # Docker Compose
+```
+
+Without Docker, stop `run.py` and start it again.
+
+## 4. Check it
+
+Plan a trip to one of the ingested destinations, such as Paris. Below the results, a **Sources** section lists the Wikivoyage sections the agents used, with their license. A destination that isn't in the index still gets a plan, just without sources.
+
+## Add destinations
+
+Add a line to `data/rag/destinations.txt` using the exact Wikivoyage article title. Add other names travellers might type after a `|`:
+
+```text
+Kyoto
+New York City | New York, NYC
+```
+
+Then rebuild. To add one destination without rebuilding the rest:
+
+```bash
+python -m common.rag.ingest --destinations "Kyoto,Lisbon"
+```
+
+Rebuilding a destination replaces its passages, so running the command twice doesn't create duplicates. Downloaded articles are cached for 30 days; add `--refresh` to download them again.
+
+## After changing the embedding model
+
+An index only works with the model that built it. If you change `LLM_PROVIDER` or the embedding model, the agents log `rag_disabled reason=index built with ... but settings use ...` and plan trips without guidance. Rebuild from scratch:
+
+```bash
+python -m common.rag.ingest --rebuild
+```
+
+## Turn guidance off
+
+Set `RAG_ENABLED=false` and restart the agents. See [Configuration](/reference/configuration#retrieval) for the other settings.
+
+## License
+
+Wikivoyage text is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The planner sends short excerpts to the language model and links each source in the trip plan for attribution. The index and cached articles stay on your machine and are gitignored.

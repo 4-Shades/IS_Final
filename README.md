@@ -16,7 +16,7 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 - **Pluggable LLM Provider:** Ollama (Meta Llama, self-hosted) or OpenAI `gpt-4o-mini` (cloud), selected by `LLM_PROVIDER`.
 - **Structured Responses:** Requests JSON-schema-constrained output from either provider and validates it against shared Pydantic contracts.
 - **Open Travel Data Adapters:** Nominatim-compatible geocoding, Overpass places, and Open-Meteo weather adapters in `common/travel_data.py`. Not yet wired into any agent, so their flags currently have no effect.
-- **Retrieval Context:** Adds curated, licensed guidance with source citations to prompts. Currently a minimal demo: three seeded documents (Paris and Rome) matched without real embeddings.
+- **Retrieval-Augmented Generation:** Flight, Stay, and Activities add relevant [Wikivoyage](https://en.wikivoyage.org) passages to their prompts, retrieved with LlamaIndex from a local Chroma index, and trip plans list them as sources. Optional: without an index, planning works as before.
 - **Containerized Runtime:** One Dockerfile with separate API and UI images, so each installs only the dependencies it needs.
 - **Interactive UI:** User-friendly web interface built with Streamlit.
 - **Microservices:** Each agent runs as an independent service.
@@ -110,6 +110,23 @@ DOWNSTREAM_TIMEOUT_SECONDS=170
 ```
 
 `LLM_TIMEOUT_SECONDS` is how long an agent waits for Ollama; `DOWNSTREAM_TIMEOUT_SECONDS` is how long the Host waits for each agent, so keep it a little higher. Keep both under 180 seconds, which is how long the UI waits for a plan. Restart the services afterwards (for Compose, `docker compose --profile ollama up -d`). If plans still time out, a smaller model (`OLLAMA_MODEL`) or a GPU is the real fix.
+
+### Add travel guidance (RAG)
+
+Build the Wikivoyage guidance index once, so trip plans for the 20 destinations in `data/rag/destinations.txt` use real travel-guide passages and list their sources:
+
+```bash
+# Docker Compose
+docker compose --profile ollama exec ollama ollama pull embeddinggemma
+docker compose --profile ollama --profile ingest run --rm ingest
+docker compose --profile ollama restart flight stay activities
+
+# Without Docker (Ollama running, virtual environment active)
+ollama pull embeddinggemma
+python -m common.rag.ingest
+```
+
+Restart the agents after every build. Other destinations still get plans, without sources. See [`docs/how-to/build-the-guidance-index.mdx`](docs/how-to/build-the-guidance-index.mdx) for adding destinations, aliases, and switching embedding models. Wikivoyage text is CC BY-SA 4.0; the index and downloaded articles stay local and are gitignored.
 
 ### Using OpenAI instead of Ollama locally
 
@@ -272,7 +289,11 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `LLM_PROVIDER` | `ollama` (default) | `openai` | Which LLM backend the agents call. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` (Compose: `http://ollama:11434`) | Not used | Ollama server URL. |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Not used | Ollama generation model. |
-| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Not used | Read but currently unused: no agent calls the embedding model, so you don't need to pull it. |
+| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Not used | Embeds guidance passages when `LLM_PROVIDER=ollama`. |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Same | Embeds guidance passages when `LLM_PROVIDER=openai`. |
+| `RAG_ENABLED` | `true` | `true` | Add Wikivoyage guidance to prompts. Harmless with no index built. |
+| `RAG_TOP_K` | `2` | `2` | Passages per agent. More passages make CPU-only Ollama slower. |
+| `RAG_INDEX_DIR` | `data/rag/index` | Same | Where the Chroma index lives. |
 | `OPENAI_MODEL` | `gpt-4o-mini` (default) | `gpt-4o-mini` | OpenAI model. |
 | `OPENAI_API_KEY` | Only if using OpenAI | From SSM on AWS; a Railway variable for Flight | OpenAI API key. Never commit it. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Same | OpenAI-compatible API endpoint. |
@@ -314,7 +335,8 @@ IS_Final/
 │   ├── flight_agent/
 │   ├── host_agent/
 │   └── stay_agent/
-├── common/                 # LLM, RAG, provider, and communication utilities
+├── common/                 # LLM, RAG (common/rag/), provider, and communication utilities
+├── data/rag/               # destinations.txt for the guidance index (index and cache are gitignored)
 ├── shared/                 # Shared config and data schemas
 ├── tests/                  # Contract and provider tests
 ├── infra/

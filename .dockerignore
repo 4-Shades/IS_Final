@@ -6,6 +6,7 @@
 !shared/
 !travel_ui.py
 !requirements/
+!data/rag/destinations.txt
 
 **/__pycache__
 **/*.py[cod]

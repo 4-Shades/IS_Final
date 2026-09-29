@@ -12,16 +12,21 @@
     "groups": [
       {
         "group": "Start here",
-        "pages": ["index"]
+        "pages": [
+          "index"
+        ]
       },
       {
         "group": "Tutorials",
-        "pages": ["tutorials/first-trip-plan"]
+        "pages": [
+          "tutorials/first-trip-plan"
+        ]
       },
       {
         "group": "How-to guides",
         "pages": [
           "how-to/run-with-python",
+          "how-to/build-the-guidance-index",
           "how-to/fix-timeouts",
           "how-to/use-openai-locally",
           "how-to/host-ollama-remotely",

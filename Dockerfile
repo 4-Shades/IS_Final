@@ -52,6 +52,9 @@ COPY --from=api-builder "$VIRTUAL_ENV" "$VIRTUAL_ENV"
 COPY --chown=app:app agents ./agents
 COPY --chown=app:app common ./common
 COPY --chown=app:app shared ./shared
+COPY --chown=app:app data/rag/destinations.txt ./data/rag/destinations.txt
+# Owned by app so the rag-index volume mounted here is writable by the ingest command.
+RUN mkdir -p data/rag/index && chown -R app:app data
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

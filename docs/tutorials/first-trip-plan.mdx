@@ -98,7 +98,19 @@ You've planned your first trip.
 
 When you clicked the button, the web page sent your trip details to the **Host** agent. The Host passed them to the **Flight**, **Stay**, and **Activities** agents at the same time. Each of those asked the language model in Ollama for suggestions, told it to answer in an exact JSON format, and checked the answer before sending it back. The Host combined the three answers into one trip plan for the page to display.
 
-Because the destination was Paris, the Stay and Activities prompts also included a few pieces of curated Paris guidance, with their sources. Try Rome next; it has guidance too. Other destinations get suggestions without it.
+The suggestions came only from what the model already knows. The agents can also read real travel-guide passages before answering, and show you where they came from; that's the next step.
+
+## Add real travel guidance
+
+Download Wikivoyage's articles for a few cities and index them. The first command fetches the 620 MB embedding model; the second takes a few minutes:
+
+```bash
+docker compose --profile ollama exec ollama ollama pull embeddinggemma
+docker compose --profile ollama --profile ingest run --rm ingest python -m common.rag.ingest --destinations "Paris,Tokyo,Rome"
+docker compose --profile ollama restart flight stay activities
+```
+
+Plan the Paris trip again. This time a **Sources** section appears below the tables, listing the Wikivoyage sections the agents used, such as "Wikivoyage: Paris, Sleep". Try a city you didn't index: it still works, just without sources.
 
 ## Stop the planner
 
@@ -111,5 +123,6 @@ Your downloaded model stays in its volume for next time. To start again, repeat 
 ## Next steps
 
 - Run the agents directly with Python, for faster changes while developing: [Run without Docker](/how-to/run-with-python).
+- Index more destinations: [Build the guidance index](/how-to/build-the-guidance-index).
 - Understand how the agents fit together: [Architecture](/explanation/architecture).
 - See the exact request and response formats: [HTTP API](/reference/http-api).

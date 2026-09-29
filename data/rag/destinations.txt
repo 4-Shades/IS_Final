@@ -1,0 +1,23 @@
+# Destinations to ingest from Wikivoyage: python -m common.rag.ingest
+# One per line, using the Wikivoyage article title. Optional aliases after "|",
+# comma-separated, are other names a traveller might type for the same place.
+Paris
+Rome
+London
+Barcelona
+Amsterdam
+Lisbon
+Istanbul
+Tokyo
+Kyoto
+Seoul
+Hong Kong
+Singapore
+Bangkok
+Manila | Metro Manila
+Cebu City | Cebu
+Bali
+Dubai
+Sydney
+New York City | New York, NYC
+San Francisco | SF

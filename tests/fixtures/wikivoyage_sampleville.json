@@ -1,0 +1,21 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 1,
+        "ns": 0,
+        "title": "Sampleville",
+        "lastrevid": 42,
+        "fullurl": "https://en.wikivoyage.org/wiki/Sampleville",
+        "revisions": [
+          {
+            "revid": 42,
+            "parentid": 41
+          }
+        ],
+        "extract": "Sampleville is a fictional lakeside town used for testing.\n\n== Understand ==\nSampleville grew around its old harbour.\n\n=== Climate ===\nSummers are mild and winters are wet.\n\n== Get in ==\n=== By plane ===\nSampleville Airport has daily flights from the capital. A shuttle bus runs to the harbour every 30 minutes.\n\n=== By train ===\nTrains stop at Central Station.\n\n== Get around ==\nThe town is small enough to walk.\n\n== See ==\nThe lighthouse on the north pier is the town's best-known sight. The harbour museum shows old fishing boats.\n\n== Do ==\nKayak rentals operate from the east beach in summer.\n\n== Eat ==\nGrilled fish stalls line the harbour front.\n\n== Sleep ==\n=== Budget ===\nThe Harbour Hostel has dorm beds near the station.\n\n=== Splurge ===\nThe Lighthouse Hotel has rooms with lake views.\n\n== Connect ==\nFree wifi is available in the library.\n\n== Go next ==\n"
+      }
+    ]
+  }
+}
