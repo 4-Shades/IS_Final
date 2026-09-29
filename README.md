@@ -7,6 +7,8 @@ The **ADK-Powered Travel Planner** is a multi-agent travel-planning application.
 
 Generated flights, stays, and activities are illustrative suggestions only; they are not live availability, live prices, or bookable offers.
 
+**Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. The [cloud deployment](#cloud-setup) is **dormant**: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
+
 ## Features
 - **Multi-Agent Architecture:** Orchestrates specialized agents for different travel aspects.
 - **Pluggable LLM Provider:** Ollama (Meta Llama, self-hosted) or OpenAI `gpt-4o-mini` (cloud), selected by `LLM_PROVIDER`.
@@ -28,13 +30,13 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 
 ## Choose a setup
 
-|  | Self-hosted | Cloud |
+|  | Self-hosted (supported) | Cloud (dormant) |
 | --- | --- | --- |
 | **Where it runs** | Your machine: Python processes or Docker Compose | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
 | **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` |
 | **`LLM_PROVIDER`** | `ollama` (the default) | `openai` |
 | **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
-| **Cost** | Free | About $41/month for AWS while running (a few cents when spun down), plus about $0.001 per trip plan in OpenAI usage and Railway's plan |
+| **Cost** | Free | About $50/month for AWS while running (load balancer and WAF about $32 of it, whether or not it's used), a few cents when spun down; plus about $0.001 per trip plan in OpenAI usage and Railway's plan |
 | **Use it for** | Development, testing, offline demos | A public URL others can use |
 
 The two setups share the same code and Docker image; only configuration differs. You can also mix them, for example running the UI locally against the cloud backend by setting `HOST_SERVICE_URL`.
@@ -94,6 +96,19 @@ The UI is available at `http://localhost:8501`. The agents reach Ollama at `http
 
 To also start the optional PostgreSQL and Redis services, set `POSTGRES_PASSWORD` in `.env` and add `--profile data`.
 
+### If trip plans come back "temporarily unavailable"
+
+The Host calls Flight, Stay, and Activities at the same time, and all three share one Ollama. On a CPU-only machine Ollama works through them largely one at a time, so each agent can take longer than the defaults allow even though a single agent answers in seconds. Symptoms: the UI shows "Service is temporarily unavailable" for some or all agents after about 30 seconds, while each agent's own `/run` works when called alone.
+
+Raise the timeouts in `.env` (both `run.py` and Docker Compose read it):
+
+```env
+LLM_TIMEOUT_SECONDS=150
+DOWNSTREAM_TIMEOUT_SECONDS=170
+```
+
+`LLM_TIMEOUT_SECONDS` is how long an agent waits for Ollama; `DOWNSTREAM_TIMEOUT_SECONDS` is how long the Host waits for each agent, so keep it a little higher. Keep both under 180 seconds, which is how long the UI waits for a plan. Restart the services afterwards (for Compose, `docker compose --profile ollama up -d`). If plans still time out, a smaller model (`OLLAMA_MODEL`) or a GPU is the real fix.
+
 ### Using OpenAI instead of Ollama locally
 
 Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`. Ollama is then not needed.
@@ -112,6 +127,8 @@ If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BAS
   ```
 
 ## Cloud setup
+
+> **Dormant.** Nothing below is currently running. The AWS ECS stack is spun down; the foundation (VPC, ECR images, SSM parameters, GitHub OIDC role) is kept and costs a few cents a month. The Railway Flight service is paused, and Grafana Cloud receives no data. See [Reactivating the cloud deployment](#reactivating-the-cloud-deployment).
 
 ### Architecture
 
@@ -233,6 +250,16 @@ sum by (job) (rate(http_server_duration_milliseconds_count[5m]))
 histogram_quantile(0.95, sum by (le, llm_provider) (rate(llm_request_duration_seconds_bucket[5m])))
 sum by (token_type) (increase(llm_token_usage_total[1h]))
 ```
+
+### Reactivating the cloud deployment
+
+1. **AWS:** spin the ECS module up with the [spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) commands, setting `image_tag` to the latest tag GitHub Actions pushed (shown in the run summary). It takes about 10 minutes and gets a new `host_public_url`.
+2. **Railway:** resume the Flight service in the Railway dashboard. If it's still on a trial plan, check the remaining credit first.
+3. **Streamlit Cloud:** set `HOST_SERVICE_URL` to the new `host_public_url`, and `HOST_API_KEY` to the value in `/travel/host-api-key`.
+4. **Grafana Cloud:** nothing to change. Metrics start arriving as soon as traffic does, as long as the stack still exists. If the trial has ended, confirm the free tier is active, and if the token was deleted, generate a new one and update `/travel/otel-otlp-headers` and the Railway variable.
+5. **Check it:** a `POST /run` without `X-API-Key` should return `401`, and with it a trip plan.
+
+While dormant, GitHub Actions still pushes an image to ECR on every push to `main`. That costs a few cents a month (ECR keeps the five newest images per repository). To stop it, delete the `AWS_ROLE_ARN` repository variable; the job then skips.
 
 ## Configuration
 
