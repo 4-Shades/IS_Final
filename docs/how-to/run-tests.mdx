@@ -1,0 +1,23 @@
+---
+title: "Run the tests and linter"
+description: "Check your changes the same way CI does."
+---
+
+With the virtual environment from [Run without Docker](/how-to/run-with-python) active, from the repository root:
+
+```bash
+python -m pytest -q
+python -m ruff check .
+```
+
+These are the same two checks the `test` job runs on every push and pull request to `main`, so passing them locally means CI's test job will pass too.
+
+The tests don't need Ollama, OpenAI, or Grafana: they use fake HTTP responses.
+
+To let ruff fix what it can automatically, such as import order:
+
+```bash
+python -m ruff check . --fix
+```
+
+Long lines (over 100 characters) must be wrapped by hand.

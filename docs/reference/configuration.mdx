@@ -1,0 +1,66 @@
+---
+title: "Configuration"
+description: "Every environment variable the agents and UI read, with defaults and where each is set."
+---
+
+All settings are environment variables, read in `shared/config.py`. There are no settings files beyond these.
+
+**Where values come from**
+
+- **Self-hosted:** `.env` in the repository root, copied from `.env.example`. `run.py` and Docker Compose load it. Plain `uvicorn` needs `--env-file .env`, and `streamlit run` doesn't read it.
+- **AWS:** the ECS task definitions set by Terraform, with secrets read from SSM Parameter Store when a task starts.
+- **Railway:** the Flight service's variables in the Railway dashboard.
+- **Streamlit Cloud:** the app's secrets, for the UI only.
+
+## Language model
+
+| Variable | Default | Cloud value | Description |
+| --- | --- | --- | --- |
+| `LLM_PROVIDER` | `ollama` | `openai` | `ollama` or `openai`. Any other value fails at the first model call. |
+| `LLM_TIMEOUT_SECONDS` | `90` | `120` | How long an agent waits for one model call. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | not set | Ollama's address. Docker Compose always uses `http://ollama:11434`, ignoring `.env`. |
+| `OLLAMA_MODEL` | `llama3.2:3b` | not set | Model used to generate suggestions. |
+| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | not set | Read, but currently unused: no agent calls the embedding model. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` | OpenAI model. |
+| `OPENAI_API_KEY` | none | SSM `/travel/openai-api-key` (Stay, Activities); Railway variable (Flight) | Required when `LLM_PROVIDER=openai`. Secret. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | same | Any OpenAI-compatible Chat Completions endpoint. |
+
+## Service addresses and timeouts
+
+| Variable | Default | Cloud value | Description |
+| --- | --- | --- | --- |
+| `FLIGHT_SERVICE_URL` | `http://localhost:8001` | Railway Flight URL | Read by the Host. |
+| `STAY_SERVICE_URL` | `http://localhost:8002` | `http://stay.travel.internal:8002` | Read by the Host. |
+| `ACTIVITIES_SERVICE_URL` | `http://localhost:8003` | `http://activities.travel.internal:8003` | Read by the Host. |
+| `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | `150` | How long the Host waits for each agent. Keep it above `LLM_TIMEOUT_SECONDS`. |
+| `HOST_SERVICE_URL` | `http://localhost:8000` | the `host_public_url` Terraform output | Read by the UI. A Streamlit secret of the same name takes precedence. |
+| `HOST_API_KEY` | none (Host is open) | SSM `/travel/host-api-key` (Host); Streamlit secret (UI) | When set, the Host requires it as `X-API-Key` on `POST /run`, and the UI sends it. Secret. |
+
+The UI waits up to 180 seconds for a trip plan; this is fixed in `travel_ui.py`.
+
+## Process
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_MODULE` | none | Which agent `python -m common.serve` starts, for example `agents.stay_agent.__main__`. Used by the Docker image. |
+| `PORT` | `8000` | Port `common.serve` listens on. |
+
+## Metrics
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | none (export off) | Grafana Cloud OTLP endpoint. Setting it turns metrics export on. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | none | `Authorization=Basic%20...` from Grafana Cloud. Secret. On AWS, from SSM `/travel/otel-otlp-headers`. |
+| `OTEL_SERVICE_NAME` | `travel-<agent>` | Overrides the service name attached to metrics. |
+
+See [Metrics](/reference/metrics) for what's exported.
+
+## Travel-data flags
+
+`OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, and `GROUND_TRANSPORT_ENABLED` default to `false`. They're read into the settings, but no agent checks them yet: the geocoding, places, and weather adapters in `common/travel_data.py` aren't wired into any agent. Setting them to `true` currently has no effect.
+
+## Docker Compose only
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | placeholder | Password for the optional PostgreSQL container (`--profile data`). No agent uses PostgreSQL or Redis yet. |

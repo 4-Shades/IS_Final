@@ -1,0 +1,34 @@
+---
+title: "Observability"
+description: "What the metrics measure, why they're pushed rather than scraped, and what's left out."
+---
+
+## What's worth measuring
+
+For this planner, three questions matter:
+
+1. **Is it being used, and is it working?** How many trip plans are served, and how many are rejected or fail.
+2. **Is it fast enough?** How long plans take, and how much of that is waiting for the language model.
+3. **What does it cost?** OpenAI bills by tokens, so token counts are the cost.
+
+The HTTP metrics answer the first two for every agent. The two language-model metrics, call duration by outcome and tokens by type, answer the rest. The model metrics are recorded inside the model clients, not the web layer, because a single `/run` request can succeed while its model call failed (the agent returns an `error` field with status `200`), and only the client knows the token counts.
+
+## Push, not scrape
+
+The usual Prometheus approach is to **scrape**: a collector regularly fetches `/metrics` from each service. That needs a collector that is always running and can find every service.
+
+In the cloud setup, neither held. Tasks scaled to zero every night and the whole stack was regularly destroyed, so there was nothing stable to scrape, and an always-running collector would itself have cost money around the clock.
+
+So each agent **pushes** its own metrics to Grafana Cloud over OTLP once a minute. Nothing runs besides the agents, and metrics simply stop when the agents do. The trade-off is that metrics from the final minute before a task stops can be lost, which doesn't matter at this scale.
+
+## Off by default
+
+Export only starts when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Without it, the metrics code does nothing, so running locally needs no Grafana account and sends nothing anywhere.
+
+## What's left out
+
+- **Traces.** Following a single request across the Host and all three agents would need trace context passed between them. It hasn't been added; Grafana's Traces view stays empty.
+- **Logs.** Logs go to the terminal locally, and to CloudWatch on AWS, not to Grafana.
+- **Alerts.** Nothing alerts on errors or cost. With the cloud deployment dormant, there's nothing to alert on.
+
+See [Metrics](/reference/metrics) for the exact names, and [Send metrics to Grafana Cloud](/how-to/send-metrics-to-grafana) to set it up.

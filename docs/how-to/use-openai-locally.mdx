@@ -1,0 +1,37 @@
+---
+title: "Use OpenAI instead of Ollama"
+description: "Switch the agents' language model from a local Ollama to OpenAI's API."
+---
+
+Use this when your machine is too slow for Ollama, or to compare the two providers. You need an OpenAI API key with billing credits. A trip plan costs about $0.001 with `gpt-4o-mini`.
+
+<Steps>
+  <Step title="Set the provider and key in .env">
+    ```env
+    LLM_PROVIDER=openai
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4o-mini
+    ```
+
+    Never commit `.env`; it's already in `.gitignore`.
+  </Step>
+  <Step title="Restart the agents">
+    - **Docker Compose:** `docker compose up -d --build`. You can leave out `--profile ollama`, since Ollama isn't needed.
+    - **Python:** restart `python run.py`.
+  </Step>
+  <Step title="Check it works">
+    Plan a trip in the UI. Plans should arrive in a few seconds instead of a minute or more.
+  </Step>
+</Steps>
+
+## If plans come back "temporarily unavailable"
+
+The agent logs show the reason OpenAI gave, on lines containing `generation_failed`. With Compose, run `docker compose logs stay`; without Docker, look in the terminal running `run.py`.
+
+Common causes:
+
+- `HTTP 401`: the API key is wrong.
+- `HTTP 429 ... You have no credits remaining`: add credits to your OpenAI account.
+- `OPENAI_API_KEY is required`: the key isn't set, or the agents weren't restarted after setting it.
+
+To switch back, set `LLM_PROVIDER=ollama` and restart.

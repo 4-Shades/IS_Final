@@ -1,0 +1,69 @@
+---
+title: "Spin the AWS stack up and down"
+description: "Create or destroy the ECS stack so AWS only bills while you're using it."
+---
+
+The load balancer and WAF cost about $32 per month whether or not anyone uses them, and they can't be paused. Spinning down destroys the `infra/aws/ecs-agents` module; spinning up recreates it. The `infra/aws/foundation` module (network, IAM, container images, secrets) is never touched, so spinning up needs no rebuild.
+
+Both directions use a saved plan: Terraform shows exactly what will change, and applies only that.
+
+## Before either direction
+
+Run these from `infra/aws/ecs-agents`, in the same shell you'll use for Terraform:
+
+```bash
+eval "$(aws configure export-credentials --format env)"
+export GITHUB_TOKEN=$(aws ssm get-parameter --region us-east-1 --name /travel/github-token \
+  --with-decryption --query Parameter.Value --output text)
+```
+
+- The first line gives Terraform your AWS sign-in if you use `aws login`, which Terraform can't read directly.
+- The second loads the GitHub token Terraform uses to create or delete the `AWS_ROLE_ARN` CI variable. If you forget it, the plan fails before changing anything.
+- On Git Bash for Windows, prefix `aws ssm` commands with `MSYS_NO_PATHCONV=1`.
+
+## Spin down
+
+```bash
+terraform plan -destroy -var-file=terraform.tfvars -out=down.tfplan
+terraform apply down.tfplan
+```
+
+The plan should say `0 to add, 0 to change, 30 to destroy`: the load balancer, WAF, ECS cluster and services, Cloud Map namespace, log groups, schedules, and the GitHub variable. It takes 2 to 5 minutes. Log history in CloudWatch is deleted with the log groups.
+
+Railway is separate. Pause the Flight service in the Railway dashboard to stop its usage too.
+
+## Spin up
+
+<Steps>
+  <Step title="Choose the image">
+    Set `image_tag` in `terraform.tfvars` to an image in ECR. To list them, newest last:
+
+    ```bash
+    aws ecr describe-images --region us-east-1 --repository-name travel-host-agent \
+      --query "sort_by(imageDetails,&imagePushedAt)[].imageTags[0]" --output text
+    ```
+  </Step>
+  <Step title="Plan and apply">
+    ```bash
+    terraform plan -var-file=terraform.tfvars -out=up.tfplan
+    terraform apply up.tfplan
+    ```
+
+    The plan should say `30 to add, 0 to change, 0 to destroy`.
+  </Step>
+  <Step title="Wait for the services">
+    ```bash
+    terraform output -raw host_public_url
+    aws ecs wait services-stable --region us-east-1 --cluster travel-agents \
+      --services travel-host travel-stay travel-activities
+    ```
+
+    The load balancer gets a new address every time; update anything that points at it, such as the Streamlit secret.
+  </Step>
+</Steps>
+
+## If the apply fails partway
+
+Terraform keeps what it created. Fix the cause, then plan and apply again: the new plan only contains what's still missing. If a resource was created but left broken, the plan shows it as `tainted` and replaces it.
+
+To skip managing the GitHub variable (and the token), set `manage_github_ci_variable = false` in `terraform.tfvars`.

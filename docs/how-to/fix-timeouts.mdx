@@ -1,0 +1,42 @@
+---
+title: "Fix \"temporarily unavailable\" results"
+description: "Give the agents enough time when three of them share one Ollama on a CPU."
+---
+
+**Symptom:** the UI shows warnings such as "Flights: Service is temporarily unavailable" and some or all tables are empty, usually after about 30 seconds. Each agent answers fine when called on its own.
+
+**Cause:** the Host calls Flight, Stay, and Activities at the same time, and all three share one Ollama. Without a graphics card, Ollama works through them largely one at a time, so the last one can take over a minute. The Host gives up on an agent after `DOWNSTREAM_TIMEOUT_SECONDS` (default 30), and an agent gives up on Ollama after `LLM_TIMEOUT_SECONDS` (default 90).
+
+## Raise the timeouts
+
+<Steps>
+  <Step title="Edit .env">
+    ```env
+    LLM_TIMEOUT_SECONDS=150
+    DOWNSTREAM_TIMEOUT_SECONDS=170
+    ```
+
+    Keep `DOWNSTREAM_TIMEOUT_SECONDS` a little higher than `LLM_TIMEOUT_SECONDS`, so the Host doesn't give up before the agent does. Keep both under 180 seconds, which is how long the UI waits for a plan.
+  </Step>
+  <Step title="Restart the services">
+    - **Docker Compose:** `docker compose --profile ollama up -d`. Compose recreates the containers whose settings changed.
+    - **Python:** stop `run.py` with `Ctrl+C` and start it again.
+  </Step>
+</Steps>
+
+## Tell the two errors apart
+
+The warning text shows where the time ran out:
+
+| Message | Meaning | Setting to raise |
+| --- | --- | --- |
+| `Service is temporarily unavailable.` | The Host stopped waiting for the agent, or couldn't reach it. | `DOWNSTREAM_TIMEOUT_SECONDS`, or check the agent is running |
+| `Flight planner is temporarily unavailable.` (or `Stay planner ...`, `Activity planner ...`) | The agent answered, but its call to the model failed or timed out. | `LLM_TIMEOUT_SECONDS`, or check Ollama is running and has the model |
+
+## If it still times out
+
+Raising timeouts only helps up to the UI's 180-second limit. Beyond that:
+
+- Use a smaller model: set `OLLAMA_MODEL` to a smaller model, then `ollama pull` it.
+- Run Ollama on a machine with a graphics card: [Host Ollama on another machine](/how-to/host-ollama-remotely).
+- Use OpenAI, which answers all three agents in a few seconds: [Use OpenAI instead of Ollama](/how-to/use-openai-locally).

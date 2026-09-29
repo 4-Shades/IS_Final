@@ -1,0 +1,52 @@
+---
+title: "Deploy code changes to the cloud"
+description: "Get a new commit running on Railway and AWS."
+---
+
+Railway and AWS pick up new code differently.
+
+| | How it deploys | What you do |
+| --- | --- | --- |
+| **Railway (Flight)** | Rebuilds automatically on every push to `main`. | Push to `main`. |
+| **AWS (Host, Stay, Activities)** | CI builds an image, but deploying it is manual. | Push, then apply Terraform with the new image tag. |
+
+<Warning>
+Commits that aren't pushed to GitHub never reach either platform. Both build from the `4-Shades/IS_Final` repository on GitHub, not from your machine.
+</Warning>
+
+## Deploy to AWS
+
+This only works while the stack is up, because CI pushes images only then (see [CI workflow](/reference/ci-workflow)).
+
+<Steps>
+  <Step title="Push to main">
+    ```bash
+    git push origin main
+    ```
+  </Step>
+  <Step title="Wait for CI to publish the image">
+    In GitHub, open **Actions** and wait for the run to finish. The `build-and-push` job's summary shows the image tag: the commit's short SHA, like `772849e`.
+
+    If `build-and-push` shows as skipped, the stack is down; spin it up first.
+  </Step>
+  <Step title="Apply with the new tag">
+    In `infra/aws/ecs-agents/terraform.tfvars`, set `image_tag` to the new tag. Then, after loading credentials as in [Spin the AWS stack up and down](/how-to/spin-aws-up-and-down#before-either-direction):
+
+    ```bash
+    terraform plan -var-file=terraform.tfvars -out=deploy.tfplan
+    terraform apply deploy.tfplan
+    ```
+
+    The plan updates the three task definitions and services. ECS starts new tasks and stops the old ones once the new ones pass their health checks.
+  </Step>
+</Steps>
+
+## Check which commit Railway runs
+
+With the Railway CLI linked to the `travel-flight` project:
+
+```bash
+railway status --json
+```
+
+The active deployment's `meta.commitHash` is the commit it built.

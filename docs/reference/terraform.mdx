@@ -1,0 +1,104 @@
+---
+title: "Terraform modules"
+description: "Variables, outputs, and resources of the two AWS modules."
+---
+
+The AWS deployment is two Terraform modules, applied in this order. Both use Terraform 1.6 or newer and the AWS provider 5.x, in `us-east-1` by default.
+
+| Module | Path | Lifetime |
+| --- | --- | --- |
+| Foundation | `infra/aws/foundation` | Applied once and kept. Costs a few cents a month (ECR storage). |
+| ECS agents | `infra/aws/ecs-agents` | Created on spin up, destroyed on spin down. |
+
+## SSM parameters
+
+Secrets are SecureString parameters created with the AWS CLI, not Terraform, so their values never enter Terraform state. ECS reads them when a task starts.
+
+| Parameter | Holds | Given to |
+| --- | --- | --- |
+| `/travel/openai-api-key` | OpenAI API key | Stay and Activities tasks, as `OPENAI_API_KEY` |
+| `/travel/host-api-key` | Key clients send as `X-API-Key` | Host task, as `HOST_API_KEY` |
+| `/travel/otel-otlp-headers` | Grafana Cloud auth header | All tasks, as `OTEL_EXPORTER_OTLP_HEADERS`, when metrics are on |
+| `/travel/github-token` | GitHub token with repository Variables write access | Not given to tasks. Read by your shell into `GITHUB_TOKEN` before running Terraform. |
+
+A task fails to start if a parameter it's given doesn't exist.
+
+## Foundation
+
+**Creates:** VPC (`10.40.0.0/16`), two public subnets, internet gateway, S3 gateway endpoint, ALB and ECS security groups, ECS task execution and task roles, three ECR repositories (keeping the five newest images each), the GitHub Actions OIDC provider and role, and a private S3 bucket for load balancer access logs.
+
+### Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `aws_region` | `us-east-1` | |
+| `name_prefix` | `travel` | Prefix for resource names. |
+| `vpc_cidr` | `10.40.0.0/16` | |
+| `availability_zones` | `["us-east-1a", "us-east-1b"]` | At least two; the load balancer requires it. |
+| `public_subnet_cidrs` | `["10.40.0.0/20", "10.40.16.0/20"]` | One per availability zone. |
+| `openai_api_key_parameter_name` | `/travel/openai-api-key` | |
+| `host_api_key_parameter_name` | `/travel/host-api-key` | |
+| `otel_headers_parameter_name` | `/travel/otel-otlp-headers` | |
+| `github_repository` | `4-Shades/IS_Final` | Only pushes to `main` of this repository can assume the CI role. |
+| `create_github_oidc_provider` | `true` | Set `false` if the account already has a GitHub OIDC provider; only one is allowed per account. |
+| `alb_log_retention_days` | `30` | Days to keep access logs. |
+| `log_retention_days` | `14` | Declared but unused by this module. |
+
+### Outputs
+
+| Output | Used for |
+| --- | --- |
+| `vpc_id`, `public_subnet_ids` | ECS module `vpc_id`, `task_subnet_ids`, `public_subnet_ids` |
+| `ecs_security_group_id`, `alb_security_group_id` | ECS module inputs of the same names |
+| `ecs_task_execution_role_arn`, `ecs_task_role_arn` | ECS module `execution_role_arn`, `task_role_arn` |
+| `openai_api_key_parameter_arn`, `host_api_key_parameter_arn`, `otel_headers_parameter_arn` | ECS module inputs of the same names |
+| `alb_logs_bucket` | ECS module `alb_logs_bucket` |
+| `github_actions_role_arn` | ECS module `github_actions_role_arn` |
+| `ecr_repository_urls`, `ecr_repository_names` | Where images are pushed |
+
+## ECS agents
+
+**Creates:** ECS cluster (Fargate and Fargate Spot), a task definition and service each for Host, Stay, and Activities, the internet-facing load balancer with its listener and target group, WAF, the `travel.internal` Cloud Map namespace, CloudWatch log groups, start and stop schedules, and the `AWS_ROLE_ARN` GitHub Actions variable.
+
+Also uses the GitHub provider 6.x, which reads `GITHUB_TOKEN` from the environment.
+
+### Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `vpc_id`, `task_subnet_ids`, `public_subnet_ids`, `ecs_security_group_id`, `alb_security_group_id`, `execution_role_arn`, `task_role_arn` | required | Foundation outputs. |
+| `image_tag` | `latest` | Image tag to run; CI tags images with the commit's short SHA. |
+| `flight_service_url` | required | Railway Flight HTTPS URL. |
+| `llm_provider` | `openai` | `openai` or `ollama`. |
+| `openai_model` | `gpt-4o-mini` | |
+| `openai_api_key_parameter_arn` | `""` | Required when `llm_provider = "openai"`. |
+| `ollama_base_url`, `ollama_model`, `ollama_embedding_model` | `""`, `llama3.2:3b`, `embeddinggemma` | Used only when `llm_provider = "ollama"`. |
+| `host_api_key_parameter_arn` | required | |
+| `alb_logs_bucket` | `""` | Empty turns access logs off. |
+| `waf_rate_limit_per_5_minutes` | `2000` | Requests per client IP per 5 minutes before WAF blocks it. |
+| `otel_exporter_otlp_endpoint` | `""` | Empty turns metrics export off. |
+| `otel_headers_parameter_arn` | `""` | Required when the endpoint is set. |
+| `manage_github_ci_variable` | `true` | Create and delete `AWS_ROLE_ARN` with the stack. Needs `GITHUB_TOKEN`. |
+| `github_repository` | `4-Shades/IS_Final` | Repository whose variable is managed. |
+| `github_actions_role_arn` | `""` | Value for `AWS_ROLE_ARN`. Required when `manage_github_ci_variable = true`. |
+| `desired_count` | `1` | Tasks per service while the schedule is on. |
+| `use_fargate_spot` | `true` | About 70% cheaper; AWS may stop a task with two minutes' notice, and ECS replaces it. |
+| `schedule_enabled` | `true` | Scale every service to zero outside the active window. |
+| `schedule_timezone` | `Asia/Manila` | |
+| `schedule_start_cron` | `cron(0 8 * * ? *)` | Scale up at 08:00. |
+| `schedule_stop_cron` | `cron(0 22 * * ? *)` | Scale down at 22:00. |
+| `container_cpu`, `container_memory` | `512`, `1024` | Per task: 0.5 vCPU, 1 GB. |
+| `log_retention_days` | `14` | CloudWatch log retention. |
+
+### Outputs
+
+| Output | Value |
+| --- | --- |
+| `host_public_url` | `http://` plus the load balancer's DNS name. Changes on every spin up. |
+| `stay_service_url`, `activities_service_url` | `http://stay.travel.internal:8002`, `http://activities.travel.internal:8003` |
+| `cloud_map_namespace` | `travel.internal` |
+| `host_ecr_repository_url`, `stay_ecr_repository_url`, `activities_ecr_repository_url` | ECR repository URLs |
+
+### Task environment
+
+Every task gets `LLM_PROVIDER`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, the four travel-data flags set to `false`, and the three agent URLs. With OpenAI it also gets `OPENAI_MODEL`; with Ollama, the three `OLLAMA_*` settings. `APP_MODULE` and `PORT` select the agent. Secrets are added from the [SSM parameters](#ssm-parameters) above.

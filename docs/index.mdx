@@ -1,0 +1,38 @@
+---
+title: "Travel Planner"
+description: "A multi-agent travel planner that suggests flights, stays, and activities for a trip."
+---
+
+The Travel Planner takes a trip request (where from, where to, dates, budget) and returns suggested flights, places to stay, and things to do. A **Host** agent receives the request and asks three specialist agents, **Flight**, **Stay**, and **Activities**, at the same time. Each specialist asks a language model for suggestions in a fixed JSON shape, and the Host combines the answers. A Streamlit web page is the user interface.
+
+<Warning>
+Suggestions are illustrative only. They are not live availability, live prices, or bookable offers.
+</Warning>
+
+## Project status
+
+- **Self-hosted is the supported setup.** Everything runs on your own machine, using [Ollama](https://ollama.com) as the language model. It's free.
+- **The cloud deployment is dormant.** The code and infrastructure for running on AWS and Railway, using OpenAI, are kept in the repository, but nothing is running. See [Why the cloud deployment is dormant](/explanation/cloud-design-and-costs) and [Reactivate the cloud deployment](/how-to/reactivate-the-cloud).
+
+## How these docs are organized
+
+The docs follow the [Diátaxis](https://diataxis.fr) framework: four kinds of page, each for a different need.
+
+<CardGroup cols={2}>
+  <Card title="Tutorials" icon="graduation-cap" href="/tutorials/first-trip-plan">
+    Learn by doing. Start here if you're new: run the planner and get your first trip plan.
+  </Card>
+  <Card title="How-to guides" icon="list-check" href="/how-to/run-with-python">
+    Steps for a specific task, such as switching to OpenAI or fixing timeouts.
+  </Card>
+  <Card title="Reference" icon="book" href="/reference/http-api">
+    Exact facts to look up: the HTTP API, settings, metrics, and Terraform variables.
+  </Card>
+  <Card title="Explanation" icon="lightbulb" href="/explanation/architecture">
+    Why the system is built the way it is, and the trade-offs behind it.
+  </Card>
+</CardGroup>
+
+## Project
+
+Proponents: Chaim Joseph Cordova and Psalmantha Allaine Ipong. Source code: [github.com/4-Shades/IS_Final](https://github.com/4-Shades/IS_Final).

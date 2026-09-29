@@ -1,0 +1,52 @@
+---
+title: "Security model"
+description: "What protects the planner, what each protection guards against, and its known gaps."
+---
+
+## What there is to protect
+
+The planner holds no user accounts or personal data. The things worth protecting are:
+
+- **Money.** Every trip plan uses OpenAI credits in the cloud, or machine time locally. An open endpoint lets anyone spend them.
+- **Secrets.** The OpenAI API key, the Host API key, the Grafana token, and the GitHub token.
+- **The cloud accounts.** Whatever can deploy to AWS can run arbitrary code there.
+
+## Only one door
+
+Of the four agents, only the Host is reachable from outside:
+
+- **Locally with Docker Compose,** only the UI's port (8501) is published. The agents talk to each other on an internal Docker network.
+- **On AWS,** only the load balancer accepts connections from the internet, on port 80, and it forwards only to the Host. Security groups allow Stay and Activities to be reached only by the Host, and block all inbound internet traffic to the tasks even though they have public IP addresses.
+
+So every other protection only needs to guard the Host.
+
+## The API key
+
+When `HOST_API_KEY` is set, the Host rejects any `POST /run` without a matching `X-API-Key` header. The comparison takes the same time whether the key is almost right or completely wrong, so it can't be guessed character by character from response times. Health checks stay open, because the load balancer must reach them without a key.
+
+It's off by default, because a planner on your own machine doesn't need it. In the cloud it's always on.
+
+A single shared key is the simplest protection that stops strangers. It doesn't identify individual users, and anyone who has the key has full access, so rotate it if it leaks; see [Require an API key](/how-to/require-an-api-key#rotate-the-key-in-the-cloud).
+
+## WAF and rate limiting
+
+On AWS, a web application firewall sits in front of the load balancer:
+
+- AWS's managed **common rule set** and **known bad inputs** rule set block common attack patterns before they reach the Host.
+- A **rate limit** blocks any IP address that sends more than 2,000 requests in 5 minutes, which limits how fast anyone can burn credits, even with a valid key.
+
+Every request is also written to an **access log** in S3, kept for 30 days.
+
+## Secrets
+
+- **Never in code or Terraform state.** Secrets are created with the AWS CLI as encrypted SSM parameters. Terraform refers to them only by name, and ECS reads them when a task starts. Locally they live in `.env`, which is gitignored.
+- **Each task gets only what it needs.** The OpenAI key goes only to the agents that call OpenAI, and the Host API key only to the Host.
+- **No AWS keys in GitHub.** CI signs in through GitHub's OIDC provider: AWS trusts GitHub's short-lived identity token for pushes to `main` of this one repository, and the role can only push images to three ECR repositories. It can't deploy or read anything else.
+- **The GitHub token is minimal.** It's limited to this repository and can only read and write Actions variables.
+
+## Known gaps
+
+- **No HTTPS.** Traffic to the load balancer is plain HTTP, so the API key crosses the internet unencrypted and could be read in transit. AWS certificates need a domain name, and the project doesn't have one. With a domain, the fix is a certificate, an HTTPS listener, and redirecting HTTP to HTTPS.
+- **No per-user access.** The shared key can't tell users apart or revoke one person's access.
+- **Public task IPs.** Tasks have public IP addresses to avoid the cost of a NAT gateway. Security groups block inbound traffic, but a misconfigured rule would expose them directly, where private subnets would add a second layer.
+- **Generated content.** Suggestions come from a language model and may be wrong. The UI and docs say they're illustrative, and the prompts forbid presenting them as live or bookable.

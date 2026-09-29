@@ -1,0 +1,48 @@
+---
+title: "Reactivate the cloud deployment"
+description: "Bring the dormant AWS, Railway, and Streamlit Cloud deployment back online."
+---
+
+The cloud deployment is dormant: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud receives nothing. This brings it back. It takes about 15 minutes. Once it's up, AWS bills about $50 per month (about $1.70 per day) until you [spin it down](/how-to/spin-aws-up-and-down) again.
+
+**Prerequisites:** AWS CLI v2 signed in to the project's account, Terraform 1.6 or newer, and access to the Railway, Streamlit Cloud, and Grafana Cloud accounts. The one-time setup (foundation module, SSM parameters, GitHub token) is already done; see [Cloud design and costs](/explanation/cloud-design-and-costs) for what exists.
+
+<Steps>
+  <Step title="Spin up the AWS stack">
+    Follow [Spin the AWS stack up](/how-to/spin-aws-up-and-down#spin-up). Before applying, set `image_tag` in `infra/aws/ecs-agents/terraform.tfvars` to an image that's in ECR, usually the last tag CI pushed before the spin down. This also recreates the `AWS_ROLE_ARN` GitHub variable, so CI resumes pushing images.
+
+    Note the new `host_public_url` it prints. It changes on every spin up.
+  </Step>
+  <Step title="Resume Railway Flight">
+    In the Railway dashboard, open the `travel-flight` project and resume the service. If the account is on a trial plan, check the remaining credit first.
+
+    Check it answers:
+
+    ```bash
+    curl https://travel-flight-production.up.railway.app/healthz
+    ```
+  </Step>
+  <Step title="Point the UI at the new address">
+    In the Streamlit Cloud app's **Settings → Secrets**:
+
+    ```toml
+    HOST_SERVICE_URL = "http://travel-host-....us-east-1.elb.amazonaws.com"
+    HOST_API_KEY = "the value stored in /travel/host-api-key"
+    ```
+  </Step>
+  <Step title="Check Grafana">
+    Nothing to change if the Grafana stack and token still exist. If the trial has ended, confirm the free tier is active. If the token was deleted, generate a new one and update the `/travel/otel-otlp-headers` parameter and the Railway variable.
+  </Step>
+  <Step title="Test end to end">
+    ```bash
+    URL=$(terraform -chdir=infra/aws/ecs-agents output -raw host_public_url)
+    curl -s -o /dev/null -w "without key: %{http_code}\n" -X POST $URL/run \
+      -H "Content-Type: application/json" \
+      -d '{"origin":"Manila","destination":"Paris","start_date":"2026-11-01","end_date":"2026-11-05","budget":2000}'
+    ```
+
+    It prints `401`. Then plan a trip in the Streamlit app; it should return flights, stays, and activities in a few seconds.
+  </Step>
+</Steps>
+
+To deploy code committed while the stack was down, see [Deploy code changes to the cloud](/how-to/deploy-code-to-the-cloud).

@@ -1,0 +1,54 @@
+---
+title: "Language models and structured output"
+description: "Why there are two model providers, how the agents get reliable JSON back, and how curated guidance works."
+---
+
+## Two providers, one interface
+
+The agents can use either of two language-model providers, chosen by `LLM_PROVIDER`:
+
+- **Ollama** (`ollama`, the default) runs an open model, `llama3.2:3b`, on your own machine. It's free and works offline, but it's slow without a graphics card.
+- **OpenAI** (`openai`) calls `gpt-4o-mini` over the internet. It's fast and cheap, about $0.001 per trip plan, but needs an API key and credits.
+
+Both sit behind the same interface in `common/llm.py`, so the agents don't know which one they're using.
+
+The self-hosted setup uses Ollama because it costs nothing. The cloud setup used OpenAI because running a model in the cloud needs about 3 GB of disk and 4 GB of memory per instance, which the small hosting plans used here couldn't provide, and larger ones cost far more than OpenAI's per-request price.
+
+## Getting reliable JSON
+
+The UI needs flights, stays, and activities in an exact shape it can put in a table. Language models write free text by default, so the agents constrain what the model can produce, then check the result.
+
+**Constrain.** Each agent passes the JSON schema of its expected response, generated from the Pydantic model, to the provider:
+
+- Ollama receives it in the `format` field, which limits generation to JSON matching the schema.
+- OpenAI receives it as a `json_schema` response format in **strict** mode. Strict mode accepts only a subset of JSON Schema: every object must forbid extra fields and list all its fields as required, and keywords such as defaults or length limits aren't allowed. `to_openai_strict_schema` converts the Pydantic schema into that subset.
+
+Both use temperature 0, for the most predictable output.
+
+**Check.** The answer is always validated again against the full Pydantic model, including the rules strict mode had to drop, such as prices of zero or more. If validation fails, the agent returns an `error` instead of passing along bad data.
+
+The prompt also includes an example of the expected JSON, which helps smaller local models that follow schemas less reliably.
+
+## When the model fails
+
+A model call can fail in several ways: the provider is unreachable, it times out, it rejects the request (for example, no OpenAI credits left), or it returns JSON that fails validation. All of these become the same kind of error inside the agent, and the agent responds with "... planner is temporarily unavailable." rather than crashing. The real cause, including OpenAI's own error message, goes to the agent's log.
+
+## Curated guidance
+
+Before asking the model, each agent adds relevant curated guidance to the prompt, a small form of retrieval-augmented generation (RAG). Each piece of guidance carries its title, source URL, and license, and the prompt tells the model to use only that guidance and not invent sources or live inventory.
+
+A piece of guidance is used only if:
+
+- its destination exactly matches the trip's destination,
+- its language is English,
+- its access policy is `internal` or `curated`,
+- today falls within its effective and expiry dates, and
+- it has a source URL.
+
+The current implementation is deliberately minimal:
+
+- **Three seeded documents.** Two for Paris and one for Rome, defined in `common/rag.py`. Other destinations get no guidance.
+- **No real embeddings.** Matching uses a simple word-count vector, not the embedding model. `OLLAMA_EMBEDDING_MODEL` is read but not used at runtime.
+- **In memory.** The index is rebuilt each time an agent starts.
+
+It shows where retrieval plugs into the prompts. Using it for real means loading curated documents from storage and embedding them with an actual embedding model.

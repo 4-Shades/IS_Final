@@ -1,0 +1,68 @@
+---
+title: "Send metrics to Grafana Cloud"
+description: "Export request, latency, and token metrics from the agents to Grafana Cloud."
+---
+
+Use this to see how many trip plans the agents serve, how long language-model calls take, and how many tokens they use. Export is off until you set `OTEL_EXPORTER_OTLP_ENDPOINT`. It works the same locally and in the cloud.
+
+**Prerequisite:** a Grafana Cloud account and stack. The free tier is enough.
+
+## Get the connection details
+
+In the Grafana Cloud portal (grafana.com, not your Grafana dashboard), open your stack, find the **OpenTelemetry** tile, and click **Configure**. Generate a token. The page shows two values:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: a URL like `https://otlp-gateway-prod-ap-southeast-1.grafana.net/otlp`.
+- `OTEL_EXPORTER_OTLP_HEADERS`: `Authorization=Basic%20` followed by a long encoded string. It contains your token; treat it as a password.
+
+Copy only the values, without `export` or the variable name.
+
+## Turn it on
+
+<Tabs>
+  <Tab title="Locally">
+    Add both lines to `.env` and restart the services:
+
+    ```env
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+    OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20...
+    ```
+
+    Services are named `travel-host`, `travel-stay`, and so on.
+  </Tab>
+  <Tab title="AWS">
+    Store the headers value in SSM:
+
+    ```bash
+    aws ssm put-parameter --region us-east-1 --name /travel/otel-otlp-headers \
+      --type SecureString --value "Authorization=Basic%20..."
+    ```
+
+    In `infra/aws/ecs-agents/terraform.tfvars`, set:
+
+    ```hcl
+    otel_exporter_otlp_endpoint = "https://otlp-gateway-prod-<region>.grafana.net/otlp"
+    otel_headers_parameter_arn  = "<foundation output otel_headers_parameter_arn>"
+    ```
+
+    It takes effect on the next [spin up](/how-to/spin-aws-up-and-down).
+  </Tab>
+  <Tab title="Railway">
+    Add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` as service variables on the Flight service. Railway redeploys it.
+  </Tab>
+</Tabs>
+
+## Check that data arrives
+
+Plan a trip or two, then wait about a minute; agents send metrics once a minute. In Grafana, open **Explore** and pick the Prometheus data source (named like `grafanacloud-<stack>-prom`), not Tempo or Traces, which stay empty because no traces are sent. Run:
+
+```promql
+sum by (job, token_type) (llm_token_usage_total)
+```
+
+You should see prompt and completion tokens for `travel-planner/travel-stay` and the other agents that call the model.
+
+## Import the dashboard
+
+The repository includes a ready-made dashboard in `infra/grafana/travel-planner-dashboard.json`. In Grafana, go to **Dashboards → New → Import**, upload the file, and pick your Prometheus data source.
+
+All metric names and labels are in [Metrics](/reference/metrics).

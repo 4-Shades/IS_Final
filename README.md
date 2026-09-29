@@ -7,6 +7,8 @@ The **ADK-Powered Travel Planner** is a multi-agent travel-planning application.
 
 Generated flights, stays, and activities are illustrative suggestions only; they are not live availability, live prices, or bookable offers.
 
+**Documentation:** the full docs are a [Mintlify](https://mintlify.com) site in [`docs/`](docs/), organized as tutorials, how-to guides, reference, and explanation. New here? Start with the tutorial, [`docs/tutorials/first-trip-plan.mdx`](docs/tutorials/first-trip-plan.mdx). To browse the site locally, install the CLI (`npm i -g mint`), then run `mint dev` in `docs/` and open `http://localhost:3000`.
+
 **Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. The [cloud deployment](#cloud-setup) is **dormant**: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
 
 ## Features
@@ -306,6 +308,7 @@ It signs in to AWS through GitHub's OIDC provider, so no AWS keys are stored in 
 ```text
 IS_Final/
 ├── .github/workflows/      # CI: tests and lint, then ECR image push on main
+├── docs/                   # Mintlify documentation site
 ├── agents/                 # Agent implementations
 │   ├── activities_agent/
 │   ├── flight_agent/

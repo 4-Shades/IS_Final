@@ -1,0 +1,73 @@
+---
+title: "Require an API key"
+description: "Make the Host reject trip requests that don't carry a secret key."
+---
+
+Use this when the Host is reachable by other people, for example on a shared network or in the cloud, so that only your UI and your own scripts can request trip plans. Each plan costs model time or OpenAI credits.
+
+When `HOST_API_KEY` is set, the Host requires every `POST /run` request to send the same value in an `X-API-Key` header, and rejects others with `401`. Health checks (`/healthz`, `/readyz`) stay open. The UI reads the same variable and sends the header for you. Flight, Stay, and Activities never check a key.
+
+## Turn it on locally
+
+<Steps>
+  <Step title="Generate a key">
+    ```bash
+    python -c "import secrets; print(secrets.token_hex(32))"
+    ```
+  </Step>
+  <Step title="Add it to .env">
+    ```env
+    HOST_API_KEY=paste-the-generated-value
+    ```
+
+    Both the Host and the UI read it from here, with `run.py` and with Docker Compose.
+  </Step>
+  <Step title="Restart and check">
+    Restart the services, then check that a request without the key is rejected:
+
+    ```bash
+    curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8000/run \
+      -H "Content-Type: application/json" \
+      -d '{"origin":"Manila","destination":"Paris","start_date":"2026-11-01","end_date":"2026-11-05","budget":2000}'
+    ```
+
+    It prints `401`. Planning a trip in the UI still works. (With Docker Compose the Host has no published port, so test through the UI instead.)
+  </Step>
+</Steps>
+
+To turn it off, remove the line or leave the value empty.
+
+## Call the Host from your own scripts
+
+Send the key in the `X-API-Key` header:
+
+```bash
+curl -X POST http://localhost:8000/run \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $HOST_API_KEY" \
+  -d @trip.json
+```
+
+## Rotate the key in the cloud
+
+On AWS the Host reads the key from the SSM parameter `/travel/host-api-key` when its task starts.
+
+<Steps>
+  <Step title="Store the new key">
+    ```bash
+    aws ssm put-parameter --region us-east-1 --name /travel/host-api-key \
+      --type SecureString --overwrite --value "$(openssl rand -hex 32)"
+    ```
+
+    On Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1`, or the parameter name is rewritten into a Windows path.
+  </Step>
+  <Step title="Restart the Host so it reads the new value">
+    ```bash
+    aws ecs update-service --region us-east-1 --cluster travel-agents \
+      --service travel-host --force-new-deployment
+    ```
+  </Step>
+  <Step title="Update the UI">
+    Set `HOST_API_KEY` in the Streamlit Cloud app's secrets to the new value.
+  </Step>
+</Steps>

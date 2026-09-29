@@ -1,0 +1,115 @@
+---
+title: "Your first trip plan"
+description: "Run the whole planner on your machine with Docker Compose and plan a trip to Paris."
+---
+
+In this tutorial you'll run the Travel Planner on your own computer and use it to plan a four-day trip from Manila to Paris. You'll finish with the planner running locally, a trip plan on screen, and a picture of which parts did what.
+
+It takes about 20 minutes, most of it waiting for a 2 GB language model to download.
+
+## What you need
+
+- **Docker Desktop**, installed and running.
+- **Git**, to download the project.
+- **About 5 GB of free disk space** and **8 GB of RAM** or more. The language model runs on your processor; no graphics card is needed.
+
+## 1. Get the code
+
+Open a terminal and run:
+
+```bash
+git clone https://github.com/4-Shades/IS_Final.git
+cd IS_Final
+```
+
+## 2. Create your settings file
+
+The planner reads its settings from a file called `.env`. Copy the template:
+
+<CodeGroup>
+```bash macOS / Linux
+cp .env.example .env
+```
+
+```powershell Windows
+copy .env.example .env
+```
+</CodeGroup>
+
+Open `.env` in a text editor and change these two lines, which give the language model more time to answer:
+
+```env
+LLM_TIMEOUT_SECONDS=150
+DOWNSTREAM_TIMEOUT_SECONDS=170
+```
+
+<Note>
+Without this change, your first trip plan will probably come back empty. Three agents will ask the model for suggestions at the same moment, and on a normal laptop the model answers them one after another, which takes longer than the default 30 seconds. [Fix "temporarily unavailable" results](/how-to/fix-timeouts) explains more.
+</Note>
+
+## 3. Start the planner
+
+```bash
+docker compose --profile ollama up --build -d
+```
+
+Docker builds the planner's images and starts six containers: the four agents, the web page, and Ollama, which runs the language model. The first build takes a few minutes.
+
+Check that everything is up:
+
+```bash
+docker compose ps
+```
+
+You should see six containers, each with `healthy` in its status. If some still say `starting`, wait a few seconds and run the command again.
+
+## 4. Download the language model
+
+The Ollama container starts empty. Download the model the agents use:
+
+```bash
+docker compose --profile ollama exec ollama ollama pull llama3.2:3b
+```
+
+This is the 2 GB download. When it finishes, the last line says `success`. The model is saved in a Docker volume, so you only download it once.
+
+## 5. Plan a trip
+
+Open [http://localhost:8501](http://localhost:8501) in your browser. You'll see the Travel Planner page.
+
+Fill in the form:
+
+| Field | Value |
+| --- | --- |
+| Where are you flying from? | `Manila` |
+| Destination | `Paris` |
+| Start Date | any date next month |
+| End Date | four days after the start date |
+| Budget (in USD) | `2000` |
+| Travellers | `1` |
+
+Click **Plan My Trip**.
+
+The page works for a while; on a laptop this can take one to two minutes. Then three tables appear: **Flights**, **Accommodation**, and **Activities**, each with two or three suggestions.
+
+You've planned your first trip.
+
+## What just happened
+
+When you clicked the button, the web page sent your trip details to the **Host** agent. The Host passed them to the **Flight**, **Stay**, and **Activities** agents at the same time. Each of those asked the language model in Ollama for suggestions, told it to answer in an exact JSON format, and checked the answer before sending it back. The Host combined the three answers into one trip plan for the page to display.
+
+Because the destination was Paris, the Stay and Activities prompts also included a few pieces of curated Paris guidance, with their sources. Try Rome next; it has guidance too. Other destinations get suggestions without it.
+
+## Stop the planner
+
+```bash
+docker compose --profile ollama down
+```
+
+Your downloaded model stays in its volume for next time. To start again, repeat step 3.
+
+## Next steps
+
+- Run the agents directly with Python, for faster changes while developing: [Run without Docker](/how-to/run-with-python).
+- Understand how the agents fit together: [Architecture](/explanation/architecture).
+- See the exact request and response formats: [HTTP API](/reference/http-api).

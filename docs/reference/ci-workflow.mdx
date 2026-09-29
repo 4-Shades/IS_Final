@@ -1,0 +1,49 @@
+---
+title: "CI workflow"
+description: "What .github/workflows/ci.yml runs, and when."
+---
+
+File: `.github/workflows/ci.yml`. Runs on every push and pull request to `main`. A newer run on the same branch cancels an older one still in progress.
+
+## Jobs
+
+### `test`
+
+Runs on every trigger.
+
+1. Set up Python 3.11, with pip's cache keyed on `requirements/*.txt`.
+2. `pip install -r requirements/dev.txt`
+3. `python -m pytest -q`
+4. `python -m ruff check .`
+
+### `build-and-push`
+
+Runs only when **all** of these are true, and only after `test` passes:
+
+- The trigger is a push, not a pull request.
+- The branch is `main`.
+- The `AWS_ROLE_ARN` repository variable exists. It exists only while the AWS stack is up.
+
+Otherwise it shows as **skipped**, which is expected while the cloud deployment is dormant.
+
+Steps:
+
+1. Sign in to AWS by assuming the role in `AWS_ROLE_ARN` through GitHub's OIDC provider. No AWS keys are stored in GitHub.
+2. Log in to ECR.
+3. Build the root `Dockerfile` (default `api-runtime` target) once.
+4. Tag it with the commit's short SHA and push it to `travel-host-agent`, `travel-stay-agent`, and `travel-activities-agent`.
+5. Write the tag to the run summary.
+
+It doesn't deploy. Running a new image means setting `image_tag` and applying Terraform: see [Deploy code changes to the cloud](/how-to/deploy-code-to-the-cloud).
+
+## Permissions
+
+| Scope | Permissions |
+| --- | --- |
+| Workflow | `contents: read` |
+| `build-and-push` | `contents: read`, `id-token: write` (to request the OIDC token) |
+| AWS role `travel-github-actions` | Push and pull on the three ECR repositories only. Only pushes to `main` of `4-Shades/IS_Final` can assume it. |
+
+## Related platforms
+
+Railway builds the Flight agent from `main` by itself, independently of this workflow; a failing CI run doesn't stop a Railway deploy.

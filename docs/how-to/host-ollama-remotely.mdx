@@ -1,0 +1,77 @@
+---
+title: "Host Ollama on another machine"
+description: "Run Ollama on a separate server or cluster and point the agents at it."
+---
+
+Use this when your computer can't run the model, or to put Ollama on a machine with a graphics card.
+
+Wherever it runs, Ollama needs about 3 GB of persistent disk mounted at `/root/.ollama` and about 4 GB of memory. Small or trial hosting plans can't fit this.
+
+<Warning>
+Ollama has no authentication. Keep it on a private network, and never expose port `11434` to the internet.
+</Warning>
+
+## Choose a host
+
+<Tabs>
+  <Tab title="Render">
+    Create a private service with:
+
+    - **Runtime:** Docker
+    - **Dockerfile path:** `./infra/ollama/Dockerfile`
+    - **Docker context:** `.`
+    - **Port:** `11434`
+    - **Persistent disk mount:** `/root/.ollama`
+
+    Use the service's private Render URL as `OLLAMA_BASE_URL`.
+  </Tab>
+  <Tab title="Railway">
+    In the service settings, set:
+
+    - **Dockerfile path:** `infra/ollama/Dockerfile`
+    - **Start command:** `ollama serve`
+    - **Health check path:** `/api/tags`
+
+    Attach a volume at `/root/.ollama` **before** downloading models. Without it, the download fails with `no space left on device`, and models are lost on every redeploy.
+  </Tab>
+  <Tab title="Kubernetes">
+    `infra/kubernetes/ollama.yaml` defines persistent storage, a GPU deployment, a private `ClusterIP` service, health probes, a NetworkPolicy, and a job that downloads the models. It creates no Ingress. Apply it to a cluster with a node labeled `workload=gpu`:
+
+    ```bash
+    kubectl apply -f infra/kubernetes/ollama.yaml
+    kubectl -n travel-planner wait --for=condition=available deployment/ollama --timeout=10m
+    ```
+  </Tab>
+</Tabs>
+
+## Download the model and connect the agents
+
+<Steps>
+  <Step title="Download the model">
+    In the server's shell (the Kubernetes job does this for you):
+
+    ```bash
+    ollama pull llama3.2:3b
+    ```
+  </Step>
+  <Step title="Point the agents at it">
+    In `.env`:
+
+    ```env
+    LLM_PROVIDER=ollama
+    OLLAMA_BASE_URL=http://your-ollama-host:11434
+    ```
+
+    Then restart the agents.
+  </Step>
+</Steps>
+
+<Note>
+This works when you [run without Docker](/how-to/run-with-python). Docker Compose ignores `OLLAMA_BASE_URL` from `.env`: `compose.yaml` pins it to `http://ollama:11434`, the bundled container, because the `.env` default of `localhost` would point each container at itself. To use a remote Ollama with Compose, change that line in `compose.yaml` and start without `--profile ollama`.
+</Note>
+
+<Steps>
+  <Step title="Check the connection">
+    Plan a trip in the UI. If every agent reports "planner is temporarily unavailable", the agents can't reach Ollama at that address.
+  </Step>
+</Steps>

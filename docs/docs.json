@@ -1,0 +1,75 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Travel Planner",
+  "description": "A multi-agent travel planner: a Host agent coordinating Flight, Stay, and Activities agents, with a Streamlit UI.",
+  "colors": {
+    "primary": "#0E7C66",
+    "light": "#2FBF9A",
+    "dark": "#0A5C4C"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": ["index"]
+      },
+      {
+        "group": "Tutorials",
+        "pages": ["tutorials/first-trip-plan"]
+      },
+      {
+        "group": "How-to guides",
+        "pages": [
+          "how-to/run-with-python",
+          "how-to/fix-timeouts",
+          "how-to/use-openai-locally",
+          "how-to/host-ollama-remotely",
+          "how-to/require-an-api-key",
+          "how-to/send-metrics-to-grafana",
+          "how-to/run-tests",
+          {
+            "group": "Cloud (dormant)",
+            "pages": [
+              "how-to/reactivate-the-cloud",
+              "how-to/spin-aws-up-and-down",
+              "how-to/deploy-code-to-the-cloud"
+            ]
+          }
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/http-api",
+          "reference/configuration",
+          "reference/metrics",
+          "reference/terraform",
+          "reference/ci-workflow",
+          "reference/project-structure"
+        ]
+      },
+      {
+        "group": "Explanation",
+        "pages": [
+          "explanation/architecture",
+          "explanation/llm-providers",
+          "explanation/cloud-design-and-costs",
+          "explanation/security-model",
+          "explanation/observability"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/4-Shades/IS_Final"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/4-Shades/IS_Final"
+    }
+  }
+}

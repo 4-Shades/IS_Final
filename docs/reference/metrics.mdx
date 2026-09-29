@@ -1,0 +1,77 @@
+---
+title: "Metrics"
+description: "Metrics the agents export over OpenTelemetry, with their Prometheus names in Grafana."
+---
+
+Agents export metrics only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. They push them over OTLP/HTTP every 60 seconds. No traces or logs are exported.
+
+In Grafana Cloud's Prometheus data source, metric names use underscores and gain a unit suffix, and each service appears as a `job` label.
+
+## Resource
+
+Every metric carries:
+
+| Attribute | Value | Prometheus label |
+| --- | --- | --- |
+| `service.namespace` | `travel-planner` | part of `job` |
+| `service.name` | `travel-host`, `travel-flight`, `travel-stay`, `travel-activities` (or `OTEL_SERVICE_NAME`) | part of `job` |
+
+For example, the Stay agent's metrics have `job="travel-planner/travel-stay"`. Grafana also creates a `target_info` series per service, which is a quick way to check a service is sending anything.
+
+## Language-model metrics
+
+Defined in `common/llm.py`. Recorded by the Flight, Stay, and Activities agents; the Host makes no model calls.
+
+### `llm.request.duration`
+
+Histogram, in seconds: how long each structured model call took, including failed ones.
+
+Prometheus: `llm_request_duration_seconds_bucket`, `_count`, `_sum`.
+
+| Label | Values |
+| --- | --- |
+| `llm_provider` | `ollama`, `openai` |
+| `llm_model` | for example `gpt-4o-mini`, `llama3.2:3b` |
+| `outcome` | `success`, or `error` (HTTP error, timeout, or a response that failed validation) |
+
+### `llm.token.usage`
+
+Counter, in tokens: tokens consumed by successful and failed calls that returned a usage count. Taken from OpenAI's `usage` field, or from Ollama's `prompt_eval_count` and `eval_count`.
+
+Prometheus: `llm_token_usage_total`.
+
+| Label | Values |
+| --- | --- |
+| `llm_provider` | `ollama`, `openai` |
+| `llm_model` | model name |
+| `token_type` | `prompt`, `completion` |
+
+OpenAI bills by these counts. For `gpt-4o-mini` at list price, cost in USD is `(prompt × 0.15 + completion × 0.60) / 1,000,000`.
+
+## HTTP metrics
+
+Recorded for every agent by OpenTelemetry's FastAPI instrumentation.
+
+| Metric | Prometheus name | Type |
+| --- | --- | --- |
+| `http.server.duration` | `http_server_duration_milliseconds_bucket`, `_count`, `_sum` | Histogram, milliseconds |
+| `http.server.active_requests` | `http_server_active_requests` | Gauge |
+| `http.server.request.size` | `http_server_request_size_bytes_*` | Histogram, bytes |
+| `http.server.response.size` | `http_server_response_size_bytes_*` | Histogram, bytes |
+
+Useful labels: `http_target` (the route, such as `/run` or `/healthz`), `http_method`, `http_status_code`. Filter on `http_target="/run"` to leave out health checks, which otherwise make up most requests.
+
+## Example queries
+
+```promql
+# Trip plans served in the last hour
+sum(increase(http_server_duration_milliseconds_count{job="travel-planner/travel-host", http_target="/run", http_status_code=~"2.."}[1h]))
+
+# 95th percentile model call time, per agent
+histogram_quantile(0.95, sum by (le, job) (rate(llm_request_duration_seconds_bucket[5m])))
+
+# Tokens per agent and type
+sum by (job, token_type) (llm_token_usage_total)
+```
+
+The dashboard in `infra/grafana/travel-planner-dashboard.json` is built from these metrics.

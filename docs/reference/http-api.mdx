@@ -1,0 +1,164 @@
+---
+title: "HTTP API"
+description: "Endpoints, request and response bodies, headers, and status codes for every agent."
+---
+
+Every agent is a FastAPI service with the same four endpoints. Only the `POST /run` response differs.
+
+| Agent | Local port | Service name | `POST /run` returns |
+| --- | --- | --- | --- |
+| Host | 8000 | `host` | [Trip plan](#trip-plan-host) |
+| Flight | 8001 | `flight` | [Flight response](#flight-response) |
+| Stay | 8002 | `stay` | [Stay response](#stay-response) |
+| Activities | 8003 | `activities` | [Activities response](#activities-response) |
+
+Clients normally call only the Host. Each service also serves interactive API docs at `/docs` and its OpenAPI schema at `/openapi.json`.
+
+## Endpoints
+
+### `POST /run`
+
+Plans a trip (Host) or one part of it (the other agents). The request body is a [travel request](#travel-request).
+
+**Headers**
+
+| Header | Required | Description |
+| --- | --- | --- |
+| `Content-Type: application/json` | Yes | |
+| `X-API-Key` | Host only, when `HOST_API_KEY` is set | Must equal `HOST_API_KEY`. The other agents ignore it. |
+| `X-Request-ID` | No | Used as the request ID in log lines. The Host sends it to the other agents. |
+
+**Status codes**
+
+| Code | When |
+| --- | --- |
+| `200` | The request was handled. The Host returns `200` even when some agents fail; failures are listed in `errors`. |
+| `401` | Host only: `X-API-Key` is missing or wrong while `HOST_API_KEY` is set. Body: `{"detail": "Missing or invalid X-API-Key header."}` |
+| `422` | The body failed validation, for example `end_date` not after `start_date`. The body lists the invalid fields. |
+
+### `GET /healthz`
+
+Liveness check, never guarded by the API key. Returns `{"status": "ok", "service": "<name>"}`. Load balancers and Docker health checks use it.
+
+### `GET /readyz`
+
+Readiness check. Returns `{"status": "ready", "service": "<name>"}`.
+
+### `GET /`
+
+Returns `{"service": "<name>", "status": "ok", "health": "/healthz"}`.
+
+## Request body
+
+### Travel request
+
+| Field | Type | Required | Rules |
+| --- | --- | --- | --- |
+| `origin` | string | Yes | 2 to 120 characters. Repeated spaces are collapsed. |
+| `destination` | string | Yes | 2 to 120 characters. Repeated spaces are collapsed. |
+| `start_date` | date (`YYYY-MM-DD`) | Yes | |
+| `end_date` | date (`YYYY-MM-DD`) | Yes | Must be after `start_date`. |
+| `budget` | number | Yes | Greater than 0. |
+| `currency` | string | No, default `USD` | Three letters; converted to upper case. |
+| `travellers` | integer | No, default `1` | 1 to 9. |
+| `preferences` | array of strings | No, default `[]` | At most 20 items. Used only by the Activities agent, for example `["museums", "food"]`; defaults to "general sightseeing" in its prompt. |
+| `request_id` | string | No | Generated (UUID) if left out. |
+| `trip_id` | string | No | Generated (UUID) if left out. |
+| `user_id` | string or null | No | At most 128 characters. |
+
+```json Example
+{
+  "origin": "Manila",
+  "destination": "Paris",
+  "start_date": "2026-11-01",
+  "end_date": "2026-11-05",
+  "budget": 2000,
+  "travellers": 1
+}
+```
+
+## Response bodies
+
+### Trip plan (Host)
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `request_id` | string | From the request, or generated. |
+| `trip_id` | string | From the request, or generated. |
+| `flights` | array of [flight offers](#flight-offer) | Empty if the Flight agent failed. |
+| `stay` | array of [stay offers](#stay-offer) | Empty if the Stay agent failed. Note the singular name. |
+| `activities` | array of [activity offers](#activity-offer) | Empty if the Activities agent failed. |
+| `errors` | array of objects | One entry per failed agent: `service` (`flights`, `stay`, or `activities`) and `message`. |
+
+```json Example
+{
+  "request_id": "5b0f...",
+  "trip_id": "c81e...",
+  "flights": [
+    {"airline": "Air France", "departure_time": "2026-11-01T22:30:00", "return_time": "2026-11-05T12:00:00",
+     "price": 1950.0, "currency": "USD", "stops": 1, "booking_url": null}
+  ],
+  "stay": [],
+  "activities": [],
+  "errors": [
+    {"service": "stay", "message": "Service is temporarily unavailable."},
+    {"service": "activities", "message": "Activity planner is temporarily unavailable."}
+  ]
+}
+```
+
+**Error messages**
+
+| Message | Meaning |
+| --- | --- |
+| `Service is temporarily unavailable.` | The Host couldn't reach the agent, or stopped waiting after `DOWNSTREAM_TIMEOUT_SECONDS`. |
+| `Flight planner is temporarily unavailable.` (also `Stay planner ...`, `Activity planner ...`) | The agent's language-model call failed, timed out, or returned invalid JSON. |
+
+### Flight response
+
+`{"flights": [flight offer, ...], "error": string or null}`. Always has at least one flight, or an `error`.
+
+### Stay response
+
+`{"stays": [stay offer, ...], "error": string or null}`. Always has at least one stay, or an `error`.
+
+### Activities response
+
+`{"activities": [activity offer, ...], "error": string or null}`. Always has at least one activity, or an `error`.
+
+## Offer objects
+
+All prices are zero or more, and `currency` is three letters, default `USD`. Offers are generated suggestions, not live or bookable inventory.
+
+### Flight offer
+
+| Field | Type |
+| --- | --- |
+| `airline` | string |
+| `departure_time` | string (ISO 8601 or a clear local time) |
+| `return_time` | string |
+| `price` | number |
+| `currency` | string |
+| `stops` | integer, default `0` |
+| `booking_url` | string or null |
+
+### Stay offer
+
+| Field | Type |
+| --- | --- |
+| `name` | string |
+| `location` | string |
+| `price_per_night` | number |
+| `currency` | string |
+| `booking_url` | string or null |
+
+### Activity offer
+
+| Field | Type |
+| --- | --- |
+| `name` | string |
+| `description` | string |
+| `price` | number |
+| `currency` | string |
+| `duration_hours` | number, greater than 0 |
+| `source_url` | string or null |

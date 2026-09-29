@@ -1,0 +1,72 @@
+---
+title: "Run without Docker"
+description: "Run the four agents and the UI directly with Python and a locally installed Ollama."
+---
+
+Use this when you're changing code: restarting a Python process is faster than rebuilding images.
+
+**Prerequisites:** Python 3.11 or newer and [Ollama](https://ollama.com) installed.
+
+<Steps>
+  <Step title="Install the dependencies">
+    From the repository root:
+
+    <CodeGroup>
+    ```bash macOS / Linux
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements/dev.txt
+    cp .env.example .env
+    ```
+
+    ```powershell Windows
+    python -m venv .venv
+    .venv\Scripts\activate
+    pip install -r requirements/dev.txt
+    copy .env.example .env
+    ```
+    </CodeGroup>
+
+    `requirements/dev.txt` installs the agent and UI dependencies plus the test and lint tools. The defaults in `.env` already point at Ollama on `http://localhost:11434`.
+  </Step>
+  <Step title="Start Ollama with the model">
+    ```bash
+    ollama pull llama3.2:3b
+    ollama serve
+    ```
+
+    If Ollama already runs as a background app, `ollama serve` reports that the address is in use; that's fine.
+  </Step>
+  <Step title="Start the agents and the UI">
+    In a second terminal, with the virtual environment active:
+
+    ```bash
+    python run.py
+    ```
+
+    `run.py` starts the Host (port 8000), Flight (8001), Stay (8002), and Activities (8003), waits for each to listen, then starts the UI. Press `Ctrl+C` to stop everything.
+  </Step>
+  <Step title="Open the UI">
+    Go to [http://localhost:8501](http://localhost:8501).
+  </Step>
+</Steps>
+
+## Run one service at a time
+
+To restart a single agent while the others keep running, start each in its own terminal instead of using `run.py`:
+
+```bash
+uvicorn agents.host_agent.__main__:app --port 8000 --env-file .env
+uvicorn agents.flight_agent.__main__:app --port 8001 --env-file .env
+uvicorn agents.stay_agent.__main__:app --port 8002 --env-file .env
+uvicorn agents.activities_agent.__main__:app --port 8003 --env-file .env
+streamlit run travel_ui.py
+```
+
+Add `--reload` to a `uvicorn` command to restart that agent automatically when its code changes.
+
+<Warning>
+Only `run.py` reads `.env` by itself, so keep `--env-file .env` on each `uvicorn` command, or your settings are silently ignored. `streamlit run` has no such option. If you've set `HOST_API_KEY`, set it in the UI's terminal too (`export HOST_API_KEY=...`, or `$env:HOST_API_KEY="..."` in PowerShell), or the UI's requests are rejected.
+</Warning>
+
+If trip plans come back with "temporarily unavailable", see [Fix "temporarily unavailable" results](/how-to/fix-timeouts).
