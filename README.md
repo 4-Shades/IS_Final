@@ -15,8 +15,8 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 - **Multi-Agent Architecture:** Orchestrates specialized agents for different travel aspects.
 - **Pluggable LLM Provider:** Ollama (Meta Llama, self-hosted) or OpenAI `gpt-4o-mini` (cloud), selected by `LLM_PROVIDER`.
 - **Structured Responses:** Requests JSON-schema-constrained output from either provider and validates it against shared Pydantic contracts.
-- **Open Travel Data Adapters:** Provides Nominatim-compatible geocoding, Overpass places, and Open-Meteo weather adapters.
-- **Retrieval Context:** Supports curated, licensed guidance with source citations.
+- **Open Travel Data Adapters:** Nominatim-compatible geocoding, Overpass places, and Open-Meteo weather adapters in `common/travel_data.py`. Not yet wired into any agent, so their flags currently have no effect.
+- **Retrieval Context:** Adds curated, licensed guidance with source citations to prompts. Currently a minimal demo: three seeded documents (Paris and Rome) matched without real embeddings.
 - **Containerized Runtime:** One Dockerfile with separate API and UI images, so each installs only the dependencies it needs.
 - **Interactive UI:** User-friendly web interface built with Streamlit.
 - **Microservices:** Each agent runs as an independent service.
@@ -58,11 +58,10 @@ copy .env.example .env          # macOS/Linux: cp .env.example .env
 
 ### 2. Run with Python
 
-Install [Ollama](https://ollama.com), then pull the models and start it:
+Install [Ollama](https://ollama.com), then pull the model and start it:
 
 ```bash
 ollama pull llama3.2:3b
-ollama pull embeddinggemma
 ollama serve
 ```
 
@@ -75,12 +74,14 @@ python run.py
 Or start each service in its own terminal:
 
 ```bash
-uvicorn agents.host_agent.__main__:app --port 8000
-uvicorn agents.flight_agent.__main__:app --port 8001
-uvicorn agents.stay_agent.__main__:app --port 8002
-uvicorn agents.activities_agent.__main__:app --port 8003
+uvicorn agents.host_agent.__main__:app --port 8000 --env-file .env
+uvicorn agents.flight_agent.__main__:app --port 8001 --env-file .env
+uvicorn agents.stay_agent.__main__:app --port 8002 --env-file .env
+uvicorn agents.activities_agent.__main__:app --port 8003 --env-file .env
 streamlit run travel_ui.py
 ```
+
+Only `run.py` loads `.env` by itself, so keep `--env-file .env` on each `uvicorn` command or your settings are ignored. `streamlit run` has no such option: if you set `HOST_API_KEY`, also set it in the UI's terminal.
 
 The UI is available at `http://localhost:8501`.
 
@@ -91,7 +92,6 @@ Compose runs Ollama, the four agents, and the UI in containers. You don't need t
 ```bash
 docker compose --profile ollama up --build
 docker compose --profile ollama exec ollama ollama pull llama3.2:3b
-docker compose --profile ollama exec ollama ollama pull embeddinggemma
 ```
 
 The UI is available at `http://localhost:8501`. The agents reach Ollama at `http://ollama:11434` on an internal network; Ollama has no published port, and its models persist in the `ollama-data` volume. Compose builds the root `Dockerfile` twice: `api-runtime` for the agents and `ui-runtime` for the UI.
@@ -117,7 +117,7 @@ Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`. Ollama is then not nee
 
 ### Running Ollama on a separate server
 
-If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BASE_URL` at it. Every option needs about 3 GB of persistent disk mounted at `/root/.ollama` and about 4 GB of memory; small or trial plans can't fit this. After the server starts, run `ollama pull llama3.2:3b` and `ollama pull embeddinggemma` in its shell. Keep Ollama private: it has no authentication.
+If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BASE_URL` at it. Every option needs about 3 GB of persistent disk mounted at `/root/.ollama` and about 4 GB of memory; small or trial plans can't fit this. After the server starts, run `ollama pull llama3.2:3b` in its shell. Keep Ollama private: it has no authentication.
 
 - **Render:** Docker runtime, Dockerfile path `./infra/ollama/Dockerfile`, Docker context `.`, port `11434`, persistent disk at `/root/.ollama`. Use the service's private Render URL as `OLLAMA_BASE_URL`.
 - **Railway:** Dockerfile path `infra/ollama/Dockerfile`, start command `ollama serve`, health check `/api/tags`, port `11434`. Attach a volume at `/root/.ollama` **before** pulling models; without it, the pull fails with `no space left on device` and models are lost on every redeploy.
@@ -272,7 +272,7 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `LLM_PROVIDER` | `ollama` (default) | `openai` | Which LLM backend the agents call. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` (Compose: `http://ollama:11434`) | Not used | Ollama server URL. |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Not used | Ollama generation model. |
-| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Not used | Ollama embedding model. |
+| `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | Not used | Read but currently unused: no agent calls the embedding model, so you don't need to pull it. |
 | `OPENAI_MODEL` | `gpt-4o-mini` (default) | `gpt-4o-mini` | OpenAI model. |
 | `OPENAI_API_KEY` | Only if using OpenAI | From SSM on AWS; a Railway variable for Flight | OpenAI API key. Never commit it. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Same | OpenAI-compatible API endpoint. |
@@ -283,7 +283,7 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `HOST_API_KEY` | Unset (Host is open) | From SSM on AWS; a Streamlit secret for the UI | Key the Host requires as `X-API-Key` on `POST /run`, and that the UI sends. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Unset (metrics off) | Grafana Cloud OTLP endpoint | Where agents push metrics. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Unset | From SSM on AWS; a Railway variable for Flight | Grafana Cloud auth header. Contains a token; never commit it. |
-| `OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, `GROUND_TRANSPORT_ENABLED` | `false` | `false` | Rollout flags for the open travel-data providers. |
+| `OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, `GROUND_TRANSPORT_ENABLED` | `false` | `false` | Rollout flags for the open travel-data providers. No agent reads them yet. |
 
 Do not commit `.env` or API keys. Use `.env.example` as the starting template.
 
