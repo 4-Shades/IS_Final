@@ -36,7 +36,7 @@ It also fixes the AWS deployment's main security gap: every `vercel.app` address
 ### Trade-offs
 
 - **OpenAI only.** Functions can't keep a model loaded, so Ollama isn't an option.
-- **No guidance retrieval.** The index and its libraries don't fit the function model yet, so `RAG_ENABLED=false` and plans have no sources. Enabling it would mean building the index into the deployment and copying it to the functions' only writable folder, `/tmp`, at startup.
+- **A second, simpler index.** Chroma needs a writable folder and its libraries alone outgrow Vercel's size limit, so Vercel uses LlamaIndex's built-in store instead: plain files, committed to the repository and loaded into memory, read-only. It's built with OpenAI embeddings on your own machine and has to be rebuilt by hand when the destination list changes, and each rebuild grows the repository's history by its size. Each lookup embeds a short query with OpenAI, a tiny fraction of a cent.
 - **Cold starts.** The first request after a quiet period waits a few seconds while the functions start.
 - **A beta feature.** Vercel Services is in beta, so its behavior may change.
 - **No metrics export.** The agents send metrics on a timer from a background thread, which may never run in a function that stops when idle, so Grafana export is off here.

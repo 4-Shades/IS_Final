@@ -5,7 +5,7 @@ description: "Run the four agents on Vercel's free plan, with the UI on Streamli
 
 Vercel runs the Host, Flight, Stay, and Activities agents as [Vercel Services](https://vercel.com/docs/services) in one project. Only the Host is public; it reaches the other three over private service bindings. The Streamlit UI stays on Streamlit Community Cloud, because Vercel can't run Streamlit's always-on WebSocket server. See [Cloud design and costs](/explanation/cloud-design-and-costs#vercel) for why.
 
-**What changes on Vercel:** the agents use OpenAI (`gpt-4o-mini`), since Vercel can't run Ollama, and guidance retrieval is off. The self-hosted setup is unchanged.
+**What changes on Vercel:** the agents use OpenAI (`gpt-4o-mini`), since Vercel can't run Ollama, and guidance retrieval uses a small index committed to the repository instead of Chroma. Retrieval starts off and is [turned on](#turn-on-guidance-retrieval) once that index exists. The self-hosted setup is unchanged.
 
 **Prerequisites:** a Vercel account (the free Hobby plan covers non-commercial use), Node.js, an OpenAI API key with credits, and admin access to the GitHub repository.
 
@@ -35,6 +35,8 @@ Vercel runs the Host, Flight, Stay, and Activities agents as [Vercel Services](h
       vercel env add LLM_TIMEOUT_SECONDS $target --value 120 --no-sensitive --yes
       vercel env add DOWNSTREAM_TIMEOUT_SECONDS $target --value 150 --no-sensitive --yes
       vercel env add RAG_ENABLED $target --value false --no-sensitive --yes
+      vercel env add RAG_STORE $target --value simple --no-sensitive --yes
+      vercel env add RAG_INDEX_DIR $target --value data/rag/vercel --no-sensitive --yes
     done
     ```
   </Step>
@@ -80,6 +82,16 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL/run" \
 Without `X-API-Key`, the second command prints `401`. Then plan a trip in the Streamlit app.
 
 If every agent reports "... planner is temporarily unavailable", the Host reached them but the model call failed: check `OPENAI_API_KEY` and your OpenAI credits. If they report "Service is temporarily unavailable", the Host couldn't reach them; check the deployment's logs with `vercel logs <deployment-url>`.
+
+## Turn on guidance retrieval
+
+Needs `OPENAI_API_KEY` on Vercel, since each lookup embeds a short query with OpenAI.
+
+1. Build and commit the index: see [Build the index for Vercel](/how-to/build-the-guidance-index#build-the-index-for-vercel).
+2. Try it on a preview first: `vercel env add RAG_ENABLED preview --value true --no-sensitive --force --yes`, then `vercel deploy`. Plan a Paris trip against the preview and check the response lists Wikivoyage `sources`.
+3. Then production: the same command with `production`, then `vercel deploy --prod`.
+
+If sources don't appear, check the agents' logs for a `rag_disabled` line, which says why. Trip plans keep working either way.
 
 ## Deploying changes
 

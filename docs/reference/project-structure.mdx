@@ -29,11 +29,13 @@ IS_Final/
 │   ├── grafana/               Importable Grafana dashboard
 │   ├── ollama/Dockerfile      Ollama image for hosting it on another server
 │   └── kubernetes/            Kubernetes manifest for Ollama
-├── data/rag/destinations.txt  Destinations to ingest (the index and cache under data/rag/ are gitignored)
+├── data/rag/destinations.txt  Destinations to ingest
+├── data/rag/vercel/          The Vercel index, committed (the local index and cache under data/rag/ are gitignored)
 ├── docs/                      This documentation (Mintlify)
 ├── requirements/
 │   ├── api-core.txt           Agent dependencies without retrieval (what Vercel installs)
 │   ├── api.txt                api-core.txt plus the retrieval packages
+│   ├── api-vercel.txt         api-core.txt plus LlamaIndex and OpenAI embeddings, without Chroma (Vercel agents)
 │   ├── ui.txt                 UI dependencies
 │   └── dev.txt                Both, plus pytest and ruff
 ├── requirements.txt           Streamlit Cloud entry point; installs requirements/ui.txt

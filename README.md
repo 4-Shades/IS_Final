@@ -36,7 +36,7 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 | --- | --- | --- | --- |
 | **Where it runs** | Your machine: Python processes or Docker Compose | Vercel Services (all four agents), Streamlit Community Cloud (UI) | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
 | **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` | OpenAI `gpt-4o-mini` |
-| **Guidance (RAG)** | Yes, once the index is built | No | No |
+| **Guidance (RAG)** | Yes, once the index is built | Yes, from an index committed to the repository (off until it's built) | No |
 | **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | Vercel account (free Hobby plan), Node.js, OpenAI API key with credits | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
 | **Cost** | Free | Free while idle; about $0.001 per trip plan in OpenAI usage | About $50/month while running, a few cents when spun down; plus OpenAI usage and Railway's plan |
 | **Use it for** | Development, testing, offline demos | A public HTTPS URL others can use | Kept for reference; see below |
@@ -147,12 +147,12 @@ If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BAS
 
 ## Vercel
 
-The four agents run on [Vercel](https://vercel.com) as Vercel Services defined in [`vercel.json`](vercel.json): only the Host is public, and it reaches Flight, Stay, and Activities over private service bindings. The Streamlit UI stays on Streamlit Community Cloud, because Vercel can't run Streamlit's always-on server. Vercel uses OpenAI, with guidance retrieval off, and each service installs only [`requirements/api-core.txt`](requirements/api-core.txt).
+The four agents run on [Vercel](https://vercel.com) as Vercel Services defined in [`vercel.json`](vercel.json): only the Host is public, and it reaches Flight, Stay, and Activities over private service bindings. The Streamlit UI stays on Streamlit Community Cloud, because Vercel can't run Streamlit's always-on server. Vercel uses OpenAI. Guidance retrieval uses LlamaIndex's file-based store (`RAG_STORE=simple`) with an index committed at `data/rag/vercel/`, since Chroma doesn't fit Vercel's functions; the agents install [`requirements/api-vercel.txt`](requirements/api-vercel.txt) and the Host only [`requirements/api-core.txt`](requirements/api-core.txt).
 
 Setup, in short (full steps in [`docs/how-to/deploy-to-vercel.mdx`](docs/how-to/deploy-to-vercel.mdx)):
 
 1. `npm i -g vercel`, `vercel login`, then `vercel link --yes --project travel-planner` from the repository root. This also connects the project to GitHub, so pushes to `main` deploy.
-2. Set `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, and `RAG_ENABLED=false` with `vercel env add`.
+2. Set `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, `RAG_STORE=simple`, `RAG_INDEX_DIR=data/rag/vercel`, and `RAG_ENABLED=false` with `vercel env add`. Turn retrieval on after building and committing the index: `python -m common.rag.ingest --store simple --out data/rag/vercel` with an OpenAI key.
 3. Add the secrets `OPENAI_API_KEY` and `HOST_API_KEY` **together**: without `HOST_API_KEY` the Host accepts anyone's requests on your OpenAI credits.
 4. Set the Streamlit Cloud secrets `HOST_SERVICE_URL` (the project's production `vercel.app` domain) and `HOST_API_KEY`.
 
@@ -359,6 +359,7 @@ IS_Final/
 ├── requirements/
 │   ├── api-core.txt        # FastAPI agent runtime without retrieval (Vercel)
 │   ├── api.txt             # api-core.txt plus the retrieval packages
+│   ├── api-vercel.txt      # api-core.txt plus LlamaIndex and OpenAI embeddings, no Chroma
 │   ├── ui.txt              # Streamlit runtime
 │   └── dev.txt             # api + ui + test and lint tools
 ├── requirements.txt        # Streamlit Cloud entry point (-r requirements/ui.txt)

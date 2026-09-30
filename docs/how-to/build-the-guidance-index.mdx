@@ -95,10 +95,24 @@ An index only works with the model that built it. If you change `LLM_PROVIDER` o
 python -m common.rag.ingest --rebuild
 ```
 
+## Build the index for Vercel
+
+Vercel can't run Chroma or Ollama, so its agents use a separate index: LlamaIndex's built-in file store, embedded with OpenAI and committed to the repository at `data/rag/vercel/`, where each deployment picks it up. Rebuild it when you change `data/rag/destinations.txt`.
+
+From the repository root, with the virtual environment active and your OpenAI key in the shell (not in a file the repository tracks):
+
+```bash
+LLM_PROVIDER=openai OPENAI_API_KEY=sk-... python -m common.rag.ingest --store simple --out data/rag/vercel
+```
+
+This embeds about 1,600 passages with `text-embedding-3-small`, shortened to 512 dimensions to keep the files small, for a few US cents. The command refuses to build a Vercel index with Ollama embeddings, because Vercel embeds queries with OpenAI and the two don't match.
+
+Check the folder is about 25 MB or smaller, run the tests (one of them checks the committed index), then commit `data/rag/vercel/`. Each rebuild adds its full size to the repository's history, so rebuild only when the destinations change. To turn it on, see [Deploy to Vercel](/how-to/deploy-to-vercel#turn-on-guidance-retrieval).
+
 ## Turn guidance off
 
 Set `RAG_ENABLED=false` and restart the agents. See [Configuration](/reference/configuration#retrieval) for the other settings.
 
 ## License
 
-Wikivoyage text is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The planner sends short excerpts to the language model and links each source in the trip plan for attribution. The index and cached articles stay on your machine and are gitignored.
+Wikivoyage text is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The planner sends short excerpts to the language model and links each source in the trip plan for attribution. The local Chroma index and the downloaded articles stay on your machine and are gitignored. The Vercel index is committed to the public repository, which redistributes the excerpts: CC BY-SA allows that with attribution and under the same license, and every stored passage keeps its title, source URL, and license. This is a summary, not legal advice.

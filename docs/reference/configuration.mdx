@@ -32,13 +32,17 @@ Settings for the Wikivoyage guidance added to Flight, Stay, and Activities promp
 | Variable | Default | Description |
 | --- | --- | --- |
 | `RAG_ENABLED` | `true` | Turns retrieval on. With no index built, retrieval is skipped with one log line, so leaving it on is harmless. |
-| `RAG_INDEX_DIR` | `data/rag/index` | Where the Chroma index is read and written, relative to the working directory. Docker Compose mounts the `rag-index` volume there. |
+| `RAG_STORE` | `chroma` | Vector store: `chroma` (self-hosted) or `simple`, LlamaIndex's file-based store, read-only at query time (Vercel). |
+| `RAG_INDEX_DIR` | `data/rag/index` | Where the index is read and written, relative to the working directory. Docker Compose mounts the `rag-index` volume there; Vercel uses the committed `data/rag/vercel`. |
 | `RAG_TOP_K` | `2` | Passages retrieved per agent. Each adds prompt text, which slows CPU-only Ollama. |
 | `RAG_MIN_SCORE` | `0` | Drop passages with a similarity score below this (0 to 1). |
 | `RAG_TIMEOUT_SECONDS` | `30` | Give up on retrieval after this long and plan without guidance. The slow case is the first lookup after Ollama has unloaded the embedding model. |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model when `LLM_PROVIDER=openai`. |
+| `OPENAI_EMBEDDING_DIMENSIONS` | `512` | Length of OpenAI embedding vectors. Shorter keeps the index small; `text-embedding-3` models support it. |
 
-The embedding model follows `LLM_PROVIDER`: `OLLAMA_EMBEDDING_MODEL` for Ollama, `OPENAI_EMBEDDING_MODEL` for OpenAI. An index only works with the model that built it; after changing either, rebuild with `--rebuild`.
+The embedding model follows `LLM_PROVIDER`: `OLLAMA_EMBEDDING_MODEL` for Ollama, `OPENAI_EMBEDDING_MODEL` for OpenAI. An index only works with the model, and for OpenAI the dimensions, that built it; after changing any of them, rebuild with `--rebuild`.
+
+The ingest command, `python -m common.rag.ingest`, also takes `--store` and `--out` to override `RAG_STORE` and `RAG_INDEX_DIR`, `--destinations` for a comma-separated list instead of `data/rag/destinations.txt`, `--refresh` to re-download cached articles, and `--rebuild`.
 
 ## Service addresses and timeouts
 
