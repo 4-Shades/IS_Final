@@ -1,0 +1,5 @@
+{
+  "embedding": "openai:text-embedding-3-small:512",
+  "passages": 1613,
+  "built": "2026-09-30"
+}
