@@ -25,7 +25,7 @@ flowchart LR
 
 - **Only the Host is public.** Every public path is routed to it. Flight, Stay, and Activities have no public route; the Host reaches them through service bindings, private links whose URLs Vercel injects as the same `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, and `ACTIVITIES_SERVICE_URL` settings the agents use everywhere else. No code had to change.
 - **One codebase, four services.** All four share the repository root and differ only in their entrypoint, like the single Docker image does with `APP_MODULE`.
-- **Small bundles.** Each service installs only `requirements/api-core.txt`, about 14 MB, instead of the 700 MB image used locally.
+- **Lean bundles.** The Host installs only `requirements/api-core.txt` (about 19 MB compressed). The three agents add LlamaIndex, OpenAI embeddings, and the 22 MB index (about 73 MB compressed, 226 MB uncompressed), instead of the 700 MB image used locally. That's just over the 225 MB limit for services with their own install command, so the project uses Vercel's Large Functions beta (`VERCEL_SUPPORT_LARGE_FUNCTIONS=1`).
 
 ### Why it costs nothing while idle
 
@@ -36,7 +36,7 @@ It also fixes the AWS deployment's main security gap: every `vercel.app` address
 ### Trade-offs
 
 - **OpenAI only.** Functions can't keep a model loaded, so Ollama isn't an option.
-- **A second, simpler index.** Chroma needs a writable folder and its libraries alone outgrow Vercel's size limit, so Vercel uses LlamaIndex's built-in store instead: plain files, committed to the repository and loaded into memory, read-only. It's built with OpenAI embeddings on your own machine and has to be rebuilt by hand when the destination list changes, and each rebuild grows the repository's history by its size. Each lookup embeds a short query with OpenAI, a tiny fraction of a cent.
+- **A second, simpler index.** Chroma needs a writable folder and its libraries alone outgrow Vercel's size limit, so Vercel uses LlamaIndex's built-in store instead: plain files, committed to the repository and loaded into memory, read-only. It's built with OpenAI embeddings on your own machine and has to be rebuilt by hand when the destination list changes, and each rebuild grows the repository's history by its size. Each lookup embeds a short query with OpenAI, a tiny fraction of a cent. Measured on a preview: a cold trip plan took about 20 seconds (four functions starting and loading the index), a warm one about 5 seconds, and retrieval added nothing noticeable once warm.
 - **Cold starts.** The first request after a quiet period waits a few seconds while the functions start.
 - **A beta feature.** Vercel Services is in beta, so its behavior may change.
 - **No metrics export.** The agents send metrics on a timer from a background thread, which may never run in a function that stops when idle, so Grafana export is off here.

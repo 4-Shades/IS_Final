@@ -37,6 +37,7 @@ Vercel runs the Host, Flight, Stay, and Activities agents as [Vercel Services](h
       vercel env add RAG_ENABLED $target --value false --no-sensitive --yes
       vercel env add RAG_STORE $target --value simple --no-sensitive --yes
       vercel env add RAG_INDEX_DIR $target --value data/rag/vercel --no-sensitive --yes
+      vercel env add VERCEL_SUPPORT_LARGE_FUNCTIONS $target --value 1 --no-sensitive --yes
     done
     ```
   </Step>
@@ -86,6 +87,8 @@ If every agent reports "... planner is temporarily unavailable", the Host reache
 ## Turn on guidance retrieval
 
 Needs `OPENAI_API_KEY` on Vercel, since each lookup embeds a short query with OpenAI.
+
+`VERCEL_SUPPORT_LARGE_FUNCTIONS=1` (set in the one-time setup) is required: with the index and LlamaIndex, each agent is about 226 MB uncompressed, over the 225 MB limit for services with their own install command. It turns on Vercel's Large Functions beta, which allows up to 5 GB.
 
 1. Build and commit the index: see [Build the index for Vercel](/how-to/build-the-guidance-index#build-the-index-for-vercel).
 2. Try it on a preview first: `vercel env add RAG_ENABLED preview --value true --no-sensitive --force --yes`, then `vercel deploy`. Plan a Paris trip against the preview and check the response lists Wikivoyage `sources`.
