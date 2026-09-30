@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from opentelemetry import metrics
 
 from common.rag import store
+from common.rag.types import EMPTY, Guidance
 from shared.config import Settings, get_settings
 from shared.schemas import SourceCitation
 
@@ -30,13 +30,6 @@ _retrieval_duration = metrics.get_meter("travel.rag").create_histogram(
 )
 
 
-@dataclass(frozen=True)
-class Guidance:
-    prompt_block: str = ""
-    sources: list[SourceCitation] = field(default_factory=list)
-
-
-EMPTY = Guidance()
 
 _state: dict = {}
 _cache: dict[tuple[str, str, int], Guidance] = {}

@@ -19,8 +19,8 @@ ENV VIRTUAL_ENV=/opt/venv \
 
 FROM base AS api-builder
 RUN python -m venv "$VIRTUAL_ENV"
-COPY requirements/api.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
+COPY requirements/ /tmp/requirements/
+RUN pip install -r /tmp/requirements/api.txt
 
 
 FROM base AS ui-builder
