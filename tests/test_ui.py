@@ -40,20 +40,21 @@ PLAN = {"flights": [{"airline": "X"}], "stay": [{"name": "Y"}], "activities": [{
 
 
 @pytest.mark.parametrize(
-    ("body", "label", "state"),
+    ("body", "label", "icon"),
     [
-        ({**PLAN, "errors": []}, "Trip planned in", "COMPLETE"),
+        ({**PLAN, "errors": []}, "Trip planned in", ":material/check:"),
         (
             {**PLAN, "errors": [{"service": "stay", "message": "down"}]},
             "with some parts missing",
-            "ERROR",
+            ":material/error:",
         ),
     ],
 )
-def test_status_shows_the_outcome_at_the_top_of_the_page(body, label, state):
+def test_status_shows_the_outcome_at_the_top_of_the_page(body, label, icon):
     status = _status(_plan(lambda *a, **k: _Response(body)))
     assert label in status.label
-    assert status.State.Name(status.state) == state
+    # The icon marks the outcome; older Streamlit versions have no separate state field.
+    assert status.icon == icon
 
 
 def test_status_reports_an_unreachable_host():
