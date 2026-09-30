@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 import streamlit as st
 
@@ -22,6 +25,26 @@ def _host_headers() -> dict[str, str]:
     return {"X-API-Key": api_key} if api_key else {}
 
 
+def _plan_trip(payload: dict, progress) -> dict:
+    # The request runs in a thread so the status label can show elapsed time while it waits.
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            requests.post,
+            f"{_host_service_url()}/run",
+            json=payload,
+            headers=_host_headers(),
+            # The cloud Host waits up to DOWNSTREAM_TIMEOUT_SECONDS (150) on the agents.
+            timeout=180,
+        )
+        while not future.done():
+            progress.update(label=f"Planning your trip… {time.monotonic() - started:.0f}s")
+            time.sleep(0.5)
+        response = future.result()
+    response.raise_for_status()
+    return response.json()
+
+
 def _show_offers(title: str, offers: list[dict] | None) -> None:
     if not offers:
         st.info(f"No {title.lower()} suggestions were returned.")
@@ -33,6 +56,8 @@ def _show_offers(title: str, offers: list[dict] | None) -> None:
 
 st.set_page_config(page_title="Travel Planner", page_icon="✈️")
 st.title("🌍 Travel Planner")
+# Created before the form so the planning status appears at the top of the page.
+status_area = st.container()
 
 origin = st.text_input("Where are you flying from?", placeholder="e.g., New York")
 destination = st.text_input("Destination", placeholder="e.g., Paris")
@@ -57,19 +82,31 @@ if st.button("Plan My Trip ✨"):
             "travellers": int(travellers),
             "preferences": [],
         }
-        try:
-            response = requests.post(
-                f"{_host_service_url()}/run",
-                json=payload,
-                headers=_host_headers(),
-                # The cloud Host waits up to DOWNSTREAM_TIMEOUT_SECONDS (150) on the agents.
-                timeout=180,
+        started = time.monotonic()
+        with status_area:
+            progress = st.status("Planning your trip…", expanded=True)
+        with progress:
+            st.write(
+                "The flight, stay, and activities agents are working in parallel. "
+                "With a local model this usually takes one to two minutes."
             )
-            response.raise_for_status()
-            data = response.json()
+        try:
+            data = _plan_trip(payload, progress)
         except requests.RequestException as exc:
+            progress.update(label="Trip planning failed", state="error", expanded=False)
             st.error(f"The planning service is unavailable: {exc}")
             st.stop()
+        elapsed = time.monotonic() - started
+        if data.get("errors"):
+            progress.update(
+                label=f"Trip planned in {elapsed:.0f}s, with some parts missing",
+                state="error",
+                expanded=False,
+            )
+        else:
+            progress.update(
+                label=f"Trip planned in {elapsed:.0f}s", state="complete", expanded=False
+            )
 
         for error in data.get("errors", []):
             service_name = error.get("service", "service").title()
