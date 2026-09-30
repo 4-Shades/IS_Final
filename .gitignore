@@ -61,3 +61,6 @@ reports/
 # RAG index and downloaded articles (rebuild with python -m common.rag.ingest)
 data/rag/index/
 data/rag/cache/
+
+# Vercel CLI project link (local only)
+.vercel

@@ -1,0 +1,20 @@
+# Upload only what the agents need. Everything else (secrets, envs, infra, docs, the UI) stays local.
+.env
+.env.*
+!.env.example
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.git/
+.github/
+data/
+docs/
+infra/
+tests/
+travel_ui.py
+run.py
+compose.yaml
+Dockerfile
+.dockerignore
+OLLAMA_OPEN_TRAVEL_PLAN.md

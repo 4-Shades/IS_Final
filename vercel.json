@@ -1,0 +1,31 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "host": {
+      "root": "./",
+      "entrypoint": "agents.host_agent.__main__:app",
+      "installCommand": "pip install -r requirements/api-core.txt",
+      "bindings": [
+        { "type": "service", "service": "flight", "format": "url", "env": "FLIGHT_SERVICE_URL" },
+        { "type": "service", "service": "stay", "format": "url", "env": "STAY_SERVICE_URL" },
+        { "type": "service", "service": "activities", "format": "url", "env": "ACTIVITIES_SERVICE_URL" }
+      ]
+    },
+    "flight": {
+      "root": "./",
+      "entrypoint": "agents.flight_agent.__main__:app",
+      "installCommand": "pip install -r requirements/api-core.txt"
+    },
+    "stay": {
+      "root": "./",
+      "entrypoint": "agents.stay_agent.__main__:app",
+      "installCommand": "pip install -r requirements/api-core.txt"
+    },
+    "activities": {
+      "root": "./",
+      "entrypoint": "agents.activities_agent.__main__:app",
+      "installCommand": "pip install -r requirements/api-core.txt"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": { "service": "host" } }]
+}

@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # Runs in a fresh interpreter so modules imported by other tests can't mask a missing one.
@@ -36,11 +38,13 @@ print("ok")
 """
 
 
-def test_agents_run_without_the_rag_packages_when_retrieval_is_off():
+# With retrieval on but the packages missing, the agent must still plan (and log why).
+@pytest.mark.parametrize("rag_enabled", ["false", "true"])
+def test_agents_run_without_the_rag_packages(rag_enabled):
     result = subprocess.run(
         [sys.executable, "-c", SCRIPT],
         cwd=ROOT,
-        env={**os.environ, "RAG_ENABLED": "false", "OTEL_EXPORTER_OTLP_ENDPOINT": ""},
+        env={**os.environ, "RAG_ENABLED": rag_enabled, "OTEL_EXPORTER_OTLP_ENDPOINT": ""},
         capture_output=True,
         text=True,
         timeout=120,
