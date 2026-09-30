@@ -10,7 +10,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from agents.host_agent.task_manager import _sources
 from common.rag import retrieve, store
-from common.rag.ingest import build_nodes, ingest_destination, read_destinations
+from common.rag.ingest import build_nodes, embed_destination, main, read_destinations
 from common.rag.wikivoyage import INTRO_SECTION, ArticleNotFound, parse_response, split_sections
 from shared.config import get_settings
 from shared.schemas import ActivitiesResponse, FlightResponse, StayResponse
@@ -53,14 +53,16 @@ def _article():
     return parse_response(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
 
-@pytest.fixture
-def settings(tmp_path):
+# Every retrieval test runs against both vector stores.
+@pytest.fixture(params=store.STORES)
+def settings(request, tmp_path):
     retrieve.reset()
     yield replace(
         get_settings(),
         llm_provider="ollama",
         ollama_embedding_model="fake",
         rag_enabled=True,
+        rag_store=request.param,
         rag_index_dir=str(tmp_path / "index"),
         rag_top_k=3,
         rag_min_score=0.0,
@@ -70,15 +72,20 @@ def settings(tmp_path):
 
 
 def _build_index(settings, *, destinations=("Sampleville",), aliases=None, today=TODAY):
-    client = store.open_client(settings.rag_index_dir)
-    collection = store.create_collection(client, store.embedding_identity(settings))
     model = FakeEmbedding()
+    index_dir = Path(settings.rag_index_dir)
+    writer = store.backend(settings.rag_store).Writer(
+        index_dir, store.embedding_identity(settings), model, rebuild=False
+    )
     for name in destinations:
-        ingest_destination(name, _article(), collection=collection, embed_model=model, today=today)
+        nodes = embed_destination(name, _article(), embed_model=model, today=today)
+        writer.replace(store.destination_key(name), nodes)
+    count = writer.finish()
     alias_map = {store.destination_key(d): store.destination_key(d) for d in destinations}
     for alias, target in (aliases or {}).items():
         alias_map[store.destination_key(alias)] = store.destination_key(target)
-    store.save_aliases(settings.rag_index_dir, alias_map)
+    store.save_aliases(index_dir, alias_map)
+    return count
 
 
 # --- Wikivoyage parsing -----------------------------------------------------------
@@ -130,11 +137,47 @@ def test_build_nodes_keeps_only_agent_sections_with_citation_metadata():
 
 
 def test_reingesting_a_destination_replaces_its_passages(settings):
+    first = _build_index(settings)
+    assert first > 0
+    assert _build_index(settings) == first
+
+
+def test_openai_identity_includes_dimensions_so_a_change_forces_a_rebuild():
+    base = replace(get_settings(), llm_provider="openai")
+    small = replace(base, openai_embedding_dimensions=512)
+    assert store.embedding_identity(small) == "openai:text-embedding-3-small:512"
+    assert store.embedding_identity(replace(base, openai_embedding_dimensions=256)) != (
+        store.embedding_identity(small)
+    )
+
+
+def test_unknown_store_is_reported_not_raised():
+    with pytest.raises(store.IndexUnavailable):
+        store.backend("pinecone")
+
+
+def test_ingest_refuses_a_simple_index_without_openai_embeddings(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    get_settings.cache_clear()
+    try:
+        code = main(["--store", "simple", "--out", str(tmp_path), "--destinations", "Paris"])
+    finally:
+        get_settings.cache_clear()
+    assert code == 1
+    assert "OpenAI" in capsys.readouterr().err
+    assert not any(tmp_path.iterdir())
+
+
+def test_simple_index_is_plain_files_with_its_embedding_recorded(tmp_path):
+    settings = replace(
+        get_settings(), llm_provider="ollama", ollama_embedding_model="fake",
+        rag_store="simple", rag_index_dir=str(tmp_path),
+    )
     _build_index(settings)
-    client = store.open_client(settings.rag_index_dir)
-    first = store.get_collection(client).count()
-    _build_index(settings)
-    assert store.get_collection(client).count() == first
+    meta = json.loads((tmp_path / "meta.json").read_text(encoding="utf-8"))
+    assert meta["embedding"] == "ollama:fake" and meta["passages"] > 0
+    assert (tmp_path / "docstore.json").exists()
+    assert not list(tmp_path.glob("*.sqlite3"))
 
 
 # --- Retrieval --------------------------------------------------------------------
@@ -258,3 +301,24 @@ def test_host_merges_and_dedupes_sources_and_drops_malformed_ones():
         {"error": "Service is temporarily unavailable."},
     )
     assert [s.url for s in merged] == ["https://x/a", "https://x/b"]
+
+
+# --- The committed Vercel index (built in Phase B; skipped until it exists) -----------
+
+VERCEL_INDEX = Path(__file__).resolve().parent.parent / "data" / "rag" / "vercel"
+
+
+@pytest.mark.skipif(not VERCEL_INDEX.exists(), reason="Vercel index not built yet")
+def test_committed_vercel_index_matches_vercel_settings():
+    meta = json.loads((VERCEL_INDEX / "meta.json").read_text(encoding="utf-8"))
+    vercel = replace(get_settings(), llm_provider="openai", openai_embedding_dimensions=512)
+    assert meta["embedding"] == store.embedding_identity(vercel)
+    assert meta["passages"] > 0
+    docstore = json.loads((VERCEL_INDEX / "docstore.json").read_text(encoding="utf-8"))
+    urls = {
+        node["__data__"]["metadata"]["source_url"]
+        for node in docstore["docstore/data"].values()
+    }
+    assert urls and all(u.startswith("https://en.wikivoyage.org/wiki/") for u in urls)
+    aliases = store.load_aliases(VERCEL_INDEX)
+    assert "paris" in aliases.values()

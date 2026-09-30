@@ -1,17 +1,16 @@
-"""The shared Chroma index: where it lives, how it's embedded, and destination names."""
+"""Shared retrieval settings: sections, destination names, embeddings, and aliases."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import chromadb
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from shared.config import Settings
 
-COLLECTION = "travel_guidance"
 ALIASES_FILE = "aliases.json"
+STORES = ("chroma", "simple")
 
 # Which article sections each agent retrieves from, and the topic its query asks about.
 AGENT_SECTIONS: dict[str, tuple[str, ...]] = {
@@ -27,13 +26,18 @@ AGENT_TOPICS = {
 INGESTED_SECTIONS = frozenset(s for sections in AGENT_SECTIONS.values() for s in sections)
 
 
+class IndexUnavailable(RuntimeError):
+    """The index is missing, unreadable, or was built with a different embedding model."""
+
+
 def destination_key(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
 def embedding_identity(settings: Settings) -> str:
     if settings.llm_provider == "openai":
-        return f"openai:{settings.openai_embedding_model}"
+        model = settings.openai_embedding_model
+        return f"openai:{model}:{settings.openai_embedding_dimensions}"
     return f"ollama:{settings.ollama_embedding_model}"
 
 
@@ -43,6 +47,7 @@ def build_embed_model(settings: Settings) -> BaseEmbedding:
 
         return OpenAIEmbedding(
             model=settings.openai_embedding_model,
+            dimensions=settings.openai_embedding_dimensions,
             api_key=settings.openai_api_key,
             api_base=settings.openai_base_url,
             timeout=settings.llm_timeout_seconds,
@@ -60,25 +65,19 @@ def build_embed_model(settings: Settings) -> BaseEmbedding:
     )
 
 
-def open_client(index_dir: str | Path) -> chromadb.ClientAPI:
-    return chromadb.PersistentClient(
-        path=str(index_dir),
-        settings=chromadb.Settings(anonymized_telemetry=False),
-    )
+def backend(name: str):
+    # Imported on demand so a deployment without chromadb can still use the simple store.
+    if name == "simple":
+        from common.rag import simple_store
 
-
-def get_collection(client: chromadb.ClientAPI) -> chromadb.Collection:
-    # embedding_function=None: Chroma's default downloads an ONNX model; LlamaIndex embeds.
-    return client.get_collection(COLLECTION, embedding_function=None)
-
-
-def create_collection(client: chromadb.ClientAPI, identity: str) -> chromadb.Collection:
-    return client.get_or_create_collection(
-        COLLECTION,
-        embedding_function=None,
-        configuration={"hnsw": {"space": "cosine"}},
-        metadata={"embedding": identity},
-    )
+        return simple_store
+    if name == "chroma":
+        try:
+            from common.rag import chroma_store
+        except ImportError as exc:
+            raise IndexUnavailable(f"RAG_STORE=chroma but Chroma isn't installed ({exc})") from exc
+        return chroma_store
+    raise IndexUnavailable(f"unknown RAG_STORE {name!r}; use one of {', '.join(STORES)}")
 
 
 def load_aliases(index_dir: str | Path) -> dict[str, str]:

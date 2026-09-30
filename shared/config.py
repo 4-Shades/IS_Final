@@ -28,7 +28,9 @@ class Settings:
     llm_timeout_seconds: float
     host_api_key: str | None
     openai_embedding_model: str
+    openai_embedding_dimensions: int
     rag_enabled: bool
+    rag_store: str
     rag_index_dir: str
     rag_top_k: int
     rag_min_score: float
@@ -66,7 +68,9 @@ def get_settings() -> Settings:
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "90")),
         host_api_key=os.getenv("HOST_API_KEY") or None,
         openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        openai_embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", "512")),
         rag_enabled=_bool_env("RAG_ENABLED", True),
+        rag_store=os.getenv("RAG_STORE", "chroma").lower(),
         rag_index_dir=os.getenv("RAG_INDEX_DIR", "data/rag/index"),
         rag_top_k=int(os.getenv("RAG_TOP_K", "2")),
         rag_min_score=float(os.getenv("RAG_MIN_SCORE", "0")),

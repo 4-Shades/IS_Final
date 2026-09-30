@@ -8,7 +8,9 @@
 .ruff_cache/
 .git/
 .github/
-data/
+# Local index and downloads stay local; data/rag/vercel (the Vercel index) uploads.
+data/rag/index/
+data/rag/cache/
 docs/
 infra/
 tests/

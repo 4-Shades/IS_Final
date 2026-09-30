@@ -8,10 +8,8 @@ import time
 from datetime import date
 from pathlib import Path
 
-from llama_index.core import VectorStoreIndex
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.vector_stores import FilterOperator, MetadataFilter, MetadataFilters
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from opentelemetry import metrics
 
 from common.rag import store
@@ -28,7 +26,6 @@ _CACHE_LIMIT = 256
 _retrieval_duration = metrics.get_meter("travel.rag").create_histogram(
     "rag.retrieval.duration", unit="s", description="Duration of guidance retrieval."
 )
-
 
 
 _state: dict = {}
@@ -49,23 +46,15 @@ def _load(settings: Settings, embed_model: BaseEmbedding | None) -> None:
     if "index" in _state or "disabled" in _state:
         return
     index_dir = Path(settings.rag_index_dir)
-    if not (index_dir / "chroma.sqlite3").exists():
-        _disable(f"no index at {index_dir}; run python -m common.rag.ingest")
+    try:
+        _state["index"] = store.backend(settings.rag_store).load(
+            index_dir,
+            store.embedding_identity(settings),
+            lambda: embed_model or store.build_embed_model(settings),
+        )
+    except store.IndexUnavailable as exc:
+        _disable(str(exc))
         return
-    client = store.open_client(index_dir)
-    if store.COLLECTION not in {c.name for c in client.list_collections()}:
-        _disable(f"no {store.COLLECTION} collection in {index_dir}; run the ingest")
-        return
-    collection = store.get_collection(client)
-    identity = store.embedding_identity(settings)
-    built_with = collection.metadata.get("embedding")
-    if built_with != identity:
-        _disable(f"index built with {built_with} but settings use {identity}; re-run the ingest")
-        return
-    _state["index"] = VectorStoreIndex.from_vector_store(
-        ChromaVectorStore(chroma_collection=collection),
-        embed_model=embed_model or store.build_embed_model(settings),
-    )
     _state["aliases"] = store.load_aliases(index_dir)
     _state["known"] = set(_state["aliases"].values())
 

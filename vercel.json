@@ -6,26 +6,48 @@
       "entrypoint": "agents.host_agent.__main__:app",
       "installCommand": "pip install -r requirements/api-core.txt",
       "bindings": [
-        { "type": "service", "service": "flight", "format": "url", "env": "FLIGHT_SERVICE_URL" },
-        { "type": "service", "service": "stay", "format": "url", "env": "STAY_SERVICE_URL" },
-        { "type": "service", "service": "activities", "format": "url", "env": "ACTIVITIES_SERVICE_URL" }
+        {
+          "type": "service",
+          "service": "flight",
+          "format": "url",
+          "env": "FLIGHT_SERVICE_URL"
+        },
+        {
+          "type": "service",
+          "service": "stay",
+          "format": "url",
+          "env": "STAY_SERVICE_URL"
+        },
+        {
+          "type": "service",
+          "service": "activities",
+          "format": "url",
+          "env": "ACTIVITIES_SERVICE_URL"
+        }
       ]
     },
     "flight": {
       "root": "./",
       "entrypoint": "agents.flight_agent.__main__:app",
-      "installCommand": "pip install -r requirements/api-core.txt"
+      "installCommand": "pip install -r requirements/api-vercel.txt"
     },
     "stay": {
       "root": "./",
       "entrypoint": "agents.stay_agent.__main__:app",
-      "installCommand": "pip install -r requirements/api-core.txt"
+      "installCommand": "pip install -r requirements/api-vercel.txt"
     },
     "activities": {
       "root": "./",
       "entrypoint": "agents.activities_agent.__main__:app",
-      "installCommand": "pip install -r requirements/api-core.txt"
+      "installCommand": "pip install -r requirements/api-vercel.txt"
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": { "service": "host" } }]
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "host"
+      }
+    }
+  ]
 }

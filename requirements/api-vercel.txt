@@ -1,0 +1,5 @@
+# Flight, Stay, and Activities on Vercel: retrieval with LlamaIndex's built-in store
+# and OpenAI embeddings. No Chroma, which doesn't fit Vercel's functions.
+-r api-core.txt
+llama-index-core==0.14.25
+llama-index-embeddings-openai==0.7.0

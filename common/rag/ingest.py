@@ -11,11 +11,11 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 from llama_index.core import Document
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import MetadataMode
-from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from common.rag import store
 from common.rag.wikivoyage import LICENSE, Article, ArticleNotFound, fetch_article
@@ -90,23 +90,15 @@ def build_nodes(destination: str, article: Article, today: date) -> list:
     return nodes
 
 
-def ingest_destination(
-    destination: str,
-    article: Article,
-    *,
-    collection,
-    embed_model: BaseEmbedding,
-    today: date,
-) -> int:
+def embed_destination(
+    destination: str, article: Article, *, embed_model: BaseEmbedding, today: date
+) -> list:
     nodes = build_nodes(destination, article, today)
-    if not nodes:
-        return 0
-    texts = [node.get_content(metadata_mode=MetadataMode.EMBED) for node in nodes]
-    for node, embedding in zip(nodes, embed_model.get_text_embedding_batch(texts)):
-        node.embedding = embedding
-    collection.delete(where={"destination_key": store.destination_key(destination)})
-    ChromaVectorStore(chroma_collection=collection).add(nodes)
-    return len(nodes)
+    if nodes:
+        texts = [node.get_content(metadata_mode=MetadataMode.EMBED) for node in nodes]
+        for node, embedding in zip(nodes, embed_model.get_text_embedding_batch(texts)):
+            node.embedding = embedding
+    return nodes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,61 +111,64 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Delete the index first, e.g. after switching embeddings.",
     )
+    parser.add_argument(
+        "--store", choices=store.STORES, help="Vector store to write (default: RAG_STORE)."
+    )
+    parser.add_argument("--out", type=Path, help="Index folder (default: RAG_INDEX_DIR).")
     args = parser.parse_args(argv)
 
+    load_dotenv()  # so an OPENAI_API_KEY in .env is used, as run.py does
     settings = get_settings()
-    index_dir = Path(settings.rag_index_dir)
-    index_dir.mkdir(parents=True, exist_ok=True)
+    store_name = args.store or settings.rag_store
+    index_dir = args.out or Path(settings.rag_index_dir)
     identity = store.embedding_identity(settings)
-    client = store.open_client(index_dir)
+    if store_name == "simple" and not identity.startswith("openai:"):
+        print(
+            "The simple store is built for Vercel, which embeds queries with OpenAI. "
+            "Set LLM_PROVIDER=openai and OPENAI_API_KEY.",
+            file=sys.stderr,
+        )
+        return 1
 
-    existing = {c.name for c in client.list_collections()}
-    if store.COLLECTION in existing:
-        built_with = store.get_collection(client).metadata.get("embedding")
-        if built_with != identity:
-            if not args.rebuild:
-                print(
-                    f"The index was built with {built_with}, but settings now use {identity}. "
-                    "Re-run with --rebuild to replace it.",
-                    file=sys.stderr,
-                )
-                return 1
-            client.delete_collection(store.COLLECTION)
-            store.save_aliases(index_dir, {})
-    collection = store.create_collection(client, identity)
+    embed_model = store.build_embed_model(settings)
+    try:
+        writer = store.backend(store_name).Writer(
+            index_dir, identity, embed_model, rebuild=args.rebuild
+        )
+    except store.IndexUnavailable as exc:
+        print(exc, file=sys.stderr)
+        return 1
 
     if args.destinations:
         entries = [(d.strip(), []) for d in args.destinations.split(",") if d.strip()]
     else:
         entries = read_destinations(args.file)
 
-    embed_model = store.build_embed_model(settings)
-    aliases = store.load_aliases(index_dir)
+    aliases = {} if writer.fresh else store.load_aliases(index_dir)
     cache_dir = index_dir.parent / "cache"
     today = date.today()
     failed = []
-    print(f"Embedding with {identity} into {index_dir}")
+    print(f"Embedding with {identity} into {index_dir} ({store_name})")
     with httpx.Client(timeout=30) as http:
         for destination, extra in entries:
             try:
                 article = load_article(destination, cache_dir, refresh=args.refresh, client=http)
-                count = ingest_destination(
-                    destination,
-                    article,
-                    collection=collection,
-                    embed_model=embed_model,
-                    today=today,
+                nodes = embed_destination(
+                    destination, article, embed_model=embed_model, today=today
                 )
             except (ArticleNotFound, httpx.HTTPError) as exc:
                 print(f"  {destination}: skipped ({exc})", file=sys.stderr)
                 failed.append(destination)
                 continue
             key = store.destination_key(destination)
+            if nodes:
+                writer.replace(key, nodes)
             for alias in [destination, article.title, *extra]:
                 aliases[store.destination_key(alias)] = key
-            print(f"  {destination}: {count} passages from {article.url}")
+            print(f"  {destination}: {len(nodes)} passages from {article.url}")
+    total = writer.finish()
     store.save_aliases(index_dir, aliases)
-    print(f"Done: {collection.count()} passages in total.")
+    print(f"Done: {total} passages in total.")
     return 1 if failed and len(failed) == len(entries) else 0
 
 
