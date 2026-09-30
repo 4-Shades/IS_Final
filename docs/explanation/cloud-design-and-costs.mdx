@@ -1,11 +1,52 @@
 ---
 title: "Cloud design and costs"
-description: "How the cloud deployment was built to keep costs down, and why it's dormant anyway."
+description: "The two cloud designs: the dormant AWS and Railway deployment, and Vercel, which replaced it."
 ---
 
-The cloud deployment put the planner on the internet: the Host, Stay, and Activities agents on AWS, the Flight agent on Railway, the UI on Streamlit Community Cloud, and OpenAI as the language model. It's now dormant because, even after every cost reduction, it cost more than a coursework project could justify. This page explains the design and the numbers.
+The planner has had two cloud deployments. The first put the agents on AWS and Railway; it worked, but cost about $50 per month whether or not anyone used it, so it's now dormant. The second puts them on Vercel, which costs nothing while idle. Both keep the UI on Streamlit Community Cloud and use OpenAI as the language model.
 
-## Layout
+## Vercel
+
+The four agents run as [Vercel Services](https://vercel.com/docs/services) in one project, set up by `vercel.json`. See [Deploy to Vercel](/how-to/deploy-to-vercel) for the steps.
+
+```mermaid
+flowchart LR
+  User --> ST[Streamlit Cloud UI]
+  ST -->|HTTPS + X-API-Key| Host
+  subgraph Vercel
+    Host -->|binding| Flight
+    Host -->|binding| Stay
+    Host -->|binding| Activities
+  end
+  Flight --> OAI[(OpenAI)]
+  Stay --> OAI
+  Activities --> OAI
+```
+
+- **Only the Host is public.** Every public path is routed to it. Flight, Stay, and Activities have no public route; the Host reaches them through service bindings, private links whose URLs Vercel injects as the same `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, and `ACTIVITIES_SERVICE_URL` settings the agents use everywhere else. No code had to change.
+- **One codebase, four services.** All four share the repository root and differ only in their entrypoint, like the single Docker image does with `APP_MODULE`.
+- **Small bundles.** Each service installs only `requirements/api-core.txt`, about 14 MB, instead of the 700 MB image used locally.
+
+### Why it costs nothing while idle
+
+Vercel runs each service as a function that starts when a request arrives and stops when traffic does. There's no load balancer or server to pay for between requests. On the free Hobby plan, the included usage covers far more demo traffic than this project needs, and time spent waiting on OpenAI isn't billed as active CPU. The only per-use cost is OpenAI, about $0.001 per trip plan.
+
+It also fixes the AWS deployment's main security gap: every `vercel.app` address has HTTPS, so the API key no longer crosses the internet in plain text.
+
+### Trade-offs
+
+- **OpenAI only.** Functions can't keep a model loaded, so Ollama isn't an option.
+- **No guidance retrieval.** The index and its libraries don't fit the function model yet, so `RAG_ENABLED=false` and plans have no sources. Enabling it would mean building the index into the deployment and copying it to the functions' only writable folder, `/tmp`, at startup.
+- **Cold starts.** The first request after a quiet period waits a few seconds while the functions start.
+- **A beta feature.** Vercel Services is in beta, so its behavior may change.
+- **No metrics export.** The agents send metrics on a timer from a background thread, which may never run in a function that stops when idle, so Grafana export is off here.
+- **The UI isn't on Vercel.** Streamlit needs an always-on WebSocket server, which Vercel functions can't provide.
+
+## AWS and Railway (dormant)
+
+This deployment put the Host, Stay, and Activities agents on AWS, the Flight agent on Railway, the UI on Streamlit Community Cloud, and OpenAI as the language model. It's dormant because, even after every cost reduction, it cost more than a coursework project could justify. This section explains the design and the numbers.
+
+### Layout
 
 ```mermaid
 flowchart LR
@@ -26,7 +67,7 @@ flowchart LR
 - **Flight stayed on Railway** because it was deployed there first. The Host reaches it at its Railway HTTPS URL, just like any other agent.
 - Everything is defined in two Terraform modules; see [Terraform modules](/reference/terraform).
 
-## Keeping costs down
+### Keeping costs down
 
 Each of these choices removed a cost:
 
@@ -40,7 +81,7 @@ Each of these choices removed a cost:
 
 **Push-based metrics.** Grafana Cloud's free tier receives metrics directly from the agents, with no always-on collector to pay for. See [Observability](/explanation/observability).
 
-## What it cost
+### What it cost
 
 Approximate monthly AWS cost while the stack runs, in `us-east-1`:
 
@@ -60,8 +101,8 @@ OpenAI was the cheapest part. Measured on the live stack, Stay and Activities to
 
 Railway's Flight service ran on a trial plan; after the trial it needs a paid plan.
 
-## Why it's dormant
+### Why it's dormant
 
-The fixed $32 per month buys a public URL that stays reachable, which only matters when someone is using it. For a project demonstrated occasionally, that's mostly money spent on idle infrastructure, and spinning up for each demo takes about 15 minutes of setup. The self-hosted setup does everything the cloud one does, for free.
+The fixed $32 per month buys a public URL that stays reachable, which only matters when someone is using it. For a project demonstrated occasionally, that's mostly money spent on idle infrastructure, and spinning up for each demo takes about 15 minutes of setup. The self-hosted setup does everything the cloud one does, for free, and Vercel now covers the need for a public URL at no fixed cost.
 
 So the cloud deployment is kept, not deleted: all its code and infrastructure definitions stay in the repository, the foundation stays in AWS, and it can be brought back with [Reactivate the cloud deployment](/how-to/reactivate-the-cloud).

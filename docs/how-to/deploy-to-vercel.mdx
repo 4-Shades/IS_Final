@@ -1,0 +1,90 @@
+---
+title: "Deploy to Vercel"
+description: "Run the four agents on Vercel's free plan, with the UI on Streamlit Community Cloud."
+---
+
+Vercel runs the Host, Flight, Stay, and Activities agents as [Vercel Services](https://vercel.com/docs/services) in one project. Only the Host is public; it reaches the other three over private service bindings. The Streamlit UI stays on Streamlit Community Cloud, because Vercel can't run Streamlit's always-on WebSocket server. See [Cloud design and costs](/explanation/cloud-design-and-costs#vercel) for why.
+
+**What changes on Vercel:** the agents use OpenAI (`gpt-4o-mini`), since Vercel can't run Ollama, and guidance retrieval is off. The self-hosted setup is unchanged.
+
+**Prerequisites:** a Vercel account (the free Hobby plan covers non-commercial use), Node.js, an OpenAI API key with credits, and admin access to the GitHub repository.
+
+## One-time setup
+
+<Steps>
+  <Step title="Install the CLI and sign in">
+    ```bash
+    npm i -g vercel
+    vercel login
+    ```
+  </Step>
+  <Step title="Create the project">
+    From the repository root:
+
+    ```bash
+    vercel link --yes --project travel-planner
+    ```
+
+    This creates the project, connects it to the GitHub repository, and writes a local `.vercel/` folder (gitignored). The four services are defined in `vercel.json`, so there's nothing to configure in the dashboard.
+  </Step>
+  <Step title="Add the settings">
+    ```bash
+    for target in production preview; do
+      vercel env add LLM_PROVIDER $target --value openai --no-sensitive --yes
+      vercel env add OPENAI_MODEL $target --value gpt-4o-mini --no-sensitive --yes
+      vercel env add LLM_TIMEOUT_SECONDS $target --value 120 --no-sensitive --yes
+      vercel env add DOWNSTREAM_TIMEOUT_SECONDS $target --value 150 --no-sensitive --yes
+      vercel env add RAG_ENABLED $target --value false --no-sensitive --yes
+    done
+    ```
+  </Step>
+  <Step title="Add the two secrets, together">
+    Run each command and paste the value when prompted, so it never appears in your shell history:
+
+    ```bash
+    vercel env add OPENAI_API_KEY production
+    vercel env add HOST_API_KEY production
+    ```
+
+    For `HOST_API_KEY`, generate a long random value first, for example with `python -c "import secrets; print(secrets.token_hex(32))"`, and keep it for the UI.
+
+    <Warning>
+    Add `HOST_API_KEY` whenever you add `OPENAI_API_KEY`. Without it the Host accepts requests from anyone, and each one spends your OpenAI credits.
+    </Warning>
+  </Step>
+  <Step title="Deploy">
+    Push to `main`, or run `vercel deploy --prod`. Settings only apply to new deployments, so redeploy after changing them.
+  </Step>
+  <Step title="Point the UI at it">
+    In the Streamlit Cloud app's **Settings → Secrets**:
+
+    ```toml
+    HOST_SERVICE_URL = "https://travel-planner-<suffix>.vercel.app"
+    HOST_API_KEY = "the same value as on Vercel"
+    ```
+
+    Use the project's production domain, shown by `vercel ls` or on the project page. Per-deployment URLs are protected by Vercel sign-in and won't work from Streamlit.
+  </Step>
+</Steps>
+
+## Check it
+
+```bash
+URL=https://travel-planner-<suffix>.vercel.app
+curl "$URL/healthz"                                   # {"status":"ok","service":"host"}
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$URL/run" \
+  -H "Content-Type: application/json" \
+  -d '{"origin":"Manila","destination":"Paris","start_date":"2026-11-01","end_date":"2026-11-05","budget":2000}'
+```
+
+Without `X-API-Key`, the second command prints `401`. Then plan a trip in the Streamlit app.
+
+If every agent reports "... planner is temporarily unavailable", the Host reached them but the model call failed: check `OPENAI_API_KEY` and your OpenAI credits. If they report "Service is temporarily unavailable", the Host couldn't reach them; check the deployment's logs with `vercel logs <deployment-url>`.
+
+## Deploying changes
+
+Push to `main`. Vercel builds all four services and replaces production; branches and pull requests get their own preview deployments. CI runs separately in GitHub Actions and doesn't block Vercel.
+
+## Cost
+
+On the Hobby plan, an idle deployment costs nothing: functions only run while handling requests. Each trip plan uses a few seconds of function time, mostly waiting on OpenAI, which Vercel doesn't bill as active CPU. The included monthly usage covers far more demo traffic than a coursework project needs. OpenAI usage is separate, about $0.001 per plan.

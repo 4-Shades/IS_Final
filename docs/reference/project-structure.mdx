@@ -32,12 +32,15 @@ IS_Final/
 ├── data/rag/destinations.txt  Destinations to ingest (the index and cache under data/rag/ are gitignored)
 ├── docs/                      This documentation (Mintlify)
 ├── requirements/
-│   ├── api.txt                Agent dependencies
+│   ├── api-core.txt           Agent dependencies without retrieval (what Vercel installs)
+│   ├── api.txt                api-core.txt plus the retrieval packages
 │   ├── ui.txt                 UI dependencies
 │   └── dev.txt                Both, plus pytest and ruff
 ├── requirements.txt           Streamlit Cloud entry point; installs requirements/ui.txt
 ├── Dockerfile                 Two images: api-runtime (default, agents) and ui-runtime
 ├── compose.yaml               Runs Ollama, the agents, and the UI locally; the ingest profile builds the index
+├── vercel.json                Vercel Services: the four agents, with only the Host public
+├── .vercelignore              Keeps secrets, infra, docs, tests, and the UI out of Vercel uploads
 ├── run.py                     Starts the four agents and the UI without Docker
 ├── travel_ui.py               Streamlit UI
 ├── .env.example               Template for .env

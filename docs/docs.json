@@ -33,8 +33,9 @@
           "how-to/require-an-api-key",
           "how-to/send-metrics-to-grafana",
           "how-to/run-tests",
+          "how-to/deploy-to-vercel",
           {
-            "group": "Cloud (dormant)",
+            "group": "AWS and Railway (dormant)",
             "pages": [
               "how-to/reactivate-the-cloud",
               "how-to/spin-aws-up-and-down",

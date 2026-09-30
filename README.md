@@ -9,7 +9,7 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 
 **Documentation:** the full docs are a [Mintlify](https://mintlify.com) site in [`docs/`](docs/), organized as tutorials, how-to guides, reference, and explanation. New here? Start with the tutorial, [`docs/tutorials/first-trip-plan.mdx`](docs/tutorials/first-trip-plan.mdx). To browse the site locally, install the CLI (`npm i -g mint`), then run `mint dev` in `docs/` and open `http://localhost:3000`.
 
-**Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. The [cloud deployment](#cloud-setup) is **dormant**: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
+**Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. For a public URL, the agents run on [Vercel](#vercel) at no fixed cost. The [AWS and Railway deployment](#cloud-setup-aws-and-railway-dormant) is **dormant**: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
 
 ## Features
 - **Multi-Agent Architecture:** Orchestrates specialized agents for different travel aspects.
@@ -32,16 +32,16 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 
 ## Choose a setup
 
-|  | Self-hosted (supported) | Cloud (dormant) |
-| --- | --- | --- |
-| **Where it runs** | Your machine: Python processes or Docker Compose | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
-| **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` |
-| **`LLM_PROVIDER`** | `ollama` (the default) | `openai` |
-| **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
-| **Cost** | Free | About $50/month for AWS while running (load balancer and WAF about $32 of it, whether or not it's used), a few cents when spun down; plus about $0.001 per trip plan in OpenAI usage and Railway's plan |
-| **Use it for** | Development, testing, offline demos | A public URL others can use |
+|  | Self-hosted (supported) | Vercel | AWS and Railway (dormant) |
+| --- | --- | --- | --- |
+| **Where it runs** | Your machine: Python processes or Docker Compose | Vercel Services (all four agents), Streamlit Community Cloud (UI) | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
+| **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` | OpenAI `gpt-4o-mini` |
+| **Guidance (RAG)** | Yes, once the index is built | No | No |
+| **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | Vercel account (free Hobby plan), Node.js, OpenAI API key with credits | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
+| **Cost** | Free | Free while idle; about $0.001 per trip plan in OpenAI usage | About $50/month while running, a few cents when spun down; plus OpenAI usage and Railway's plan |
+| **Use it for** | Development, testing, offline demos | A public HTTPS URL others can use | Kept for reference; see below |
 
-The two setups share the same code and Docker image; only configuration differs. You can also mix them, for example running the UI locally against the cloud backend by setting `HOST_SERVICE_URL`.
+All setups share the same code; only configuration differs. You can also mix them, for example running the UI locally against the cloud backend by setting `HOST_SERVICE_URL`.
 
 ## Self-hosted setup
 
@@ -145,7 +145,18 @@ If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BAS
   kubectl -n travel-planner wait --for=condition=available deployment/ollama --timeout=10m
   ```
 
-## Cloud setup
+## Vercel
+
+The four agents run on [Vercel](https://vercel.com) as Vercel Services defined in [`vercel.json`](vercel.json): only the Host is public, and it reaches Flight, Stay, and Activities over private service bindings. The Streamlit UI stays on Streamlit Community Cloud, because Vercel can't run Streamlit's always-on server. Vercel uses OpenAI, with guidance retrieval off, and each service installs only [`requirements/api-core.txt`](requirements/api-core.txt).
+
+Setup, in short (full steps in [`docs/how-to/deploy-to-vercel.mdx`](docs/how-to/deploy-to-vercel.mdx)):
+
+1. `npm i -g vercel`, `vercel login`, then `vercel link --yes --project travel-planner` from the repository root. This also connects the project to GitHub, so pushes to `main` deploy.
+2. Set `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, and `RAG_ENABLED=false` with `vercel env add`.
+3. Add the secrets `OPENAI_API_KEY` and `HOST_API_KEY` **together**: without `HOST_API_KEY` the Host accepts anyone's requests on your OpenAI credits.
+4. Set the Streamlit Cloud secrets `HOST_SERVICE_URL` (the project's production `vercel.app` domain) and `HOST_API_KEY`.
+
+## Cloud setup (AWS and Railway, dormant)
 
 > **Dormant.** Nothing below is currently running. The AWS ECS stack is spun down; the foundation (VPC, ECR images, SSM parameters, GitHub OIDC role) is kept and costs a few cents a month. The Railway Flight service is paused, and Grafana Cloud receives no data. See [Reactivating the cloud deployment](#reactivating-the-cloud-deployment).
 
@@ -346,12 +357,14 @@ IS_Final/
 │   ├── ollama/Dockerfile   # Self-hosted: Ollama image for a separate server
 │   └── kubernetes/         # Self-hosted: Kubernetes Ollama deployment
 ├── requirements/
-│   ├── api.txt             # FastAPI agent runtime
+│   ├── api-core.txt        # FastAPI agent runtime without retrieval (Vercel)
+│   ├── api.txt             # api-core.txt plus the retrieval packages
 │   ├── ui.txt              # Streamlit runtime
 │   └── dev.txt             # api + ui + test and lint tools
 ├── requirements.txt        # Streamlit Cloud entry point (-r requirements/ui.txt)
 ├── Dockerfile              # api-runtime (default) and ui-runtime targets; used by Compose, ECS, Railway
 ├── compose.yaml            # Self-hosted containerized stack
+├── vercel.json             # Vercel Services: four agents, only the Host public
 ├── run.py                  # Self-hosted: starts all agents and the UI without Docker
 ├── travel_ui.py            # Streamlit frontend
 ├── .env.example            # Environment template (copy to .env, which is not committed)
