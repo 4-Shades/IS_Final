@@ -45,7 +45,7 @@ An ingest command (see [Build the guidance index](/how-to/build-the-guidance-ind
 2. **Keep useful sections.** Articles follow a standard layout (Get in, See, Do, Eat, Sleep, and so on), so each agent can be given the sections that fit its job, and the rest are left out.
 3. **Split** sections into passages of about 300 tokens, with [LlamaIndex](https://www.llamaindex.ai)'s sentence splitter, so each one is a focused piece of text.
 4. **Embed** each passage, turning it into a vector that captures its meaning, with the same provider the agents use (`embeddinggemma` on Ollama, or OpenAI's embedding model).
-5. **Store** the vectors, text, and metadata (destination, section, source URL, license, and validity dates) in [Chroma](https://www.trychroma.com), a vector database kept in a local folder.
+5. **Store** the vectors, text, and metadata (destination, section, source URL, license, and validity dates). Self-hosted runs use [Chroma](https://www.trychroma.com), a vector database in a local folder; Vercel uses LlamaIndex's built-in store, plain files committed to the repository and read-only at query time. [Component design](/explanation/components) explains why there are two.
 
 ### Looking up guidance, per request
 

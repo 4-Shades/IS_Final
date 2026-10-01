@@ -1,0 +1,259 @@
+---
+title: "Component design"
+description: "What each part of the code does, how it works, and the reasoning behind it."
+---
+
+This page walks through the codebase one component at a time. For each: what it's responsible for, how it works, **why it's built that way**, and what that choice costs. [Architecture](/explanation/architecture) gives the big picture first; [Project structure](/reference/project-structure) maps the files.
+
+A request touches the components in this order: the **UI** sends a trip to the **Host**, which calls **Flight**, **Stay**, and **Activities** in parallel. Each of those looks up **guidance**, asks the **language model** for JSON, and returns it; the Host merges the three answers. **Shared contracts** and **settings** sit under all of it.
+
+## Shared foundations
+
+### Request and response contracts: `shared/schemas.py`
+
+**What it does.** Defines every message that crosses a service boundary as a Pydantic model: `TravelRequest`, the three offer types, the per-agent responses, and `TripPlanResponse`.
+
+**How it works.**
+- `TravelRequest` normalizes and checks input: collapses repeated spaces in place names, upper-cases the currency, rejects an `end_date` that isn't after `start_date`, and fills in `request_id` and `trip_id` if they're missing.
+- `FlightResponse`, `StayResponse`, and `ActivitiesResponse` refuse to be empty: each must contain at least one offer **or** an `error`.
+- `FlightAgentResponse` and its siblings extend those with a `sources` list.
+
+**Why.**
+- **One contract, checked everywhere.** Every service imports the same models, so a malformed message is caught where it's produced, not as a confusing failure two services later.
+- **"Non-empty or explained."** A response with no offers and no error is ambiguous: did it fail, or find nothing? Making that state invalid means every empty table in the UI comes with a reason.
+- **Sources live on a subclass on purpose.** The base response models are also the JSON schema the language model is told to fill in. If `sources` were on them, the model would be invited to write citations, and it would invent them. Keeping `sources` on a subclass the model never sees means citations can only come from retrieval. A test checks the model-facing schemas never mention `sources`.
+
+**Trade-off.** Changing a model changes the contract for every service at once, which is the point, but means every service must be redeployed together.
+
+### Settings: `shared/config.py`
+
+**What it does.** Reads every environment variable into one frozen `Settings` object.
+
+**How it works.** `get_settings()` builds the object once and caches it. Booleans accept `true/false/1/0/yes/no`; service URLs have trailing slashes stripped.
+
+**Why.**
+- **Environment variables only.** The same code runs on a laptop, in Docker, on AWS, and on Vercel; only the environment differs. Nothing about where a service lives is hard-coded.
+- **Frozen and cached.** Settings can't change mid-request, and reading them is free after the first call.
+- **Safe defaults for local use.** Defaults point at `localhost` and Ollama, so a fresh clone runs with no configuration beyond `.env.example`.
+
+**Trade-off.** Because settings are cached, changing an environment variable needs a restart. Tests replace settings explicitly with `dataclasses.replace` rather than relying on the environment.
+
+## Service plumbing
+
+### Agent app factory: `common/a2a_server.py`
+
+**What it does.** Builds each agent's FastAPI app: `POST /run`, `GET /healthz`, `GET /readyz`, and `GET /`.
+
+**How it works.** `create_app(service_name, execute, api_key)` wires the agent's `execute` function to `/run`, logs each request with its request ID, attaches the optional API-key check to `/run` only, and turns on metrics if configured.
+
+**Why.**
+- **One factory for four services.** Every agent gets identical endpoints, logging, health checks, and metrics, so a fix lands in all of them at once.
+- **The key guards only `/run`.** Load balancers and Docker health checks must reach `/healthz` without credentials.
+- **Constant-time comparison.** The key is compared with `secrets.compare_digest`, which takes the same time whether a guess is nearly right or completely wrong, so it can't be discovered from response times.
+- **Off unless configured.** Only the Host passes `api_key`, and only when `HOST_API_KEY` is set. A local planner, or an internal agent, doesn't need one.
+
+### Agent-to-agent client: `common/a2a_client.py`
+
+**What it does.** `call_agent` is how the Host calls an agent's `/run`.
+
+**How it works.** One HTTP POST with the request ID in `X-Request-ID` and a timeout of `DOWNSTREAM_TIMEOUT_SECONDS`. On any network error, bad status, or non-JSON body, it logs the reason and returns `{"error": "Service is temporarily unavailable."}`.
+
+**Why.**
+- **It never raises.** The Host calls three agents at once; if one exception escaped, the whole trip plan would fail. Turning failures into an ordinary response that says what's missing lets the other two parts still reach the user.
+- **A distinct message.** "Service is temporarily unavailable" means *the Host couldn't reach the agent*. It's deliberately different from the agents' own "... planner is temporarily unavailable", which means *the agent was reached but its model call failed*. The wording alone tells you which side to debug.
+- **The request ID travels.** One trip plan's log lines across four services can be matched up.
+
+### Process entry point: `common/serve.py`
+
+**What it does.** Starts whichever agent `APP_MODULE` names, on `PORT`.
+
+**Why.** One Docker image serves all four agents: CI builds once, and every deployment runs the same artifact with a different environment variable. It runs Uvicorn directly so a container stop signal shuts the server down cleanly.
+
+## The agents
+
+### Host: `agents/host_agent/task_manager.py`
+
+**What it does.** Turns one trip request into one trip plan.
+
+**How it works.**
+1. Sends the same request to Flight, Stay, and Activities with `asyncio.gather`, so all three run at once.
+2. Validates each answer against its response model.
+3. Collects any `error` into the plan's `errors` list, labeled by service.
+4. Merges the agents' `sources`, drops any that are malformed, and removes duplicate URLs.
+
+**Why.**
+- **Parallel, not sequential.** Nearly all the time is spent waiting for the language model. In parallel, a plan takes as long as the slowest agent instead of the sum of all three.
+- **The Host has no model.** It only coordinates, so it has no prompts, no API key for OpenAI, and nothing to go wrong beyond networking.
+- **Partial plans beat errors.** A plan with flights and activities but no hotels, plus a note saying hotels failed, is more useful than an error page.
+- **Sources are attribution, not content.** A bad source entry is dropped quietly rather than failing a plan that's otherwise fine.
+
+### Flight, Stay, and Activities: `agents/*/agent.py`
+
+**What they do.** Each produces one part of the plan.
+
+**How they work.** Each `execute`:
+1. Looks up guidance for the destination (see [Retrieval](#retrieval)).
+2. Builds a prompt with the trip details, the guidance block, an example of the exact JSON wanted, and a reminder not to claim anything is live or bookable.
+3. Asks the language model for that JSON.
+4. Returns the result plus the retrieved sources, or, if the model call fails, a response with a fixed error message.
+
+Activities also uses the request's `preferences` (default "general sightseeing").
+
+**Why.**
+- **Separate agents, same shape.** Each agent has its own prompt and its own slice of the guidance (Flight reads "Get in" and "Get around"; Stay reads "Sleep", "Stay safe", and "Understand"; Activities reads "See", "Do", "Eat", and "Drink"), but they share everything else. Adding a fourth specialist is a new `agent.py`, not a new architecture.
+- **An example in the prompt as well as a schema.** Larger models follow the schema alone; small local models like `llama3.2:3b` follow it more reliably with a concrete example in front of them.
+- **"Not live or bookable."** The suggestions are generated, so every prompt tells the model not to present them as real availability.
+- **A fixed, user-safe error.** The real cause (an OpenAI error, a timeout) goes to the log. The user sees a plain sentence that never leaks provider details.
+
+## Language models: `common/llm.py`
+
+**What it does.** Gets schema-valid JSON out of a language model, from either Ollama or OpenAI.
+
+**How it works.**
+- `LLMClient` defines one method, `generate_structured(prompt, response_type)`. `get_llm_client()` returns `OllamaClient` or `OpenAICompatibleClient` depending on `LLM_PROVIDER`.
+- Both send the response model's JSON schema with the request, at temperature 0, and validate the answer with Pydantic before returning it.
+- Ollama receives the schema in its `format` field. OpenAI receives it as a **strict** `json_schema` response format, after `to_openai_strict_schema` reshapes it.
+- Every failure becomes `LLMError`, and both clients record call duration, outcome, and token counts as metrics.
+
+**Why.**
+- **One interface, two providers.** Agents don't know or care which model answers. Switching between free local Ollama and fast hosted OpenAI is one setting.
+- **Constrain, then verify.** Constraining output makes valid JSON very likely; validating it makes invalid JSON impossible to pass on. Neither alone is enough: small models sometimes drift, and OpenAI's strict mode can't express every rule.
+- **Why reshape the schema for OpenAI.** Strict mode accepts a subset of JSON Schema: every object must list all its fields as required and forbid extra ones, and keywords like defaults or length limits aren't allowed. `to_openai_strict_schema` produces that subset. The rules it removes, such as prices of zero or more, are still enforced by the Pydantic validation that follows.
+- **Temperature 0.** The same request gives the same kind of answer, which makes failures reproducible.
+- **One error type.** Agents catch exactly one exception, whatever went wrong underneath.
+
+**Trade-off.** Two providers means two code paths to keep in step; the shared interface and shared tests keep them honest.
+
+## Retrieval
+
+Retrieval adds real travel-guide passages from Wikivoyage to each agent's prompt. It's split into an **offline ingest** that builds an index and an **online lookup** that reads it. [Language models and structured output](/explanation/llm-providers#curated-guidance) covers the behavior; this section covers the code.
+
+### Fetching articles: `common/rag/wikivoyage.py`
+
+**What it does.** Downloads a Wikivoyage article and splits it into sections.
+
+**How it works.** Calls the MediaWiki API for the article's plain text, URL, and revision ID (following redirects, so "NYC" finds "New York City"), then groups the text by level-2 headings. Deeper headings stay inside their parent, so "Get in" keeps its "By plane" part.
+
+**Why.**
+- **Wikivoyage.** It's free, travel-specific, consistently structured, and openly licensed (CC BY-SA), with a stable URL per article for attribution.
+- **Sections are the unit of meaning.** Wikivoyage articles follow a standard layout, so a section name says exactly what the text is about. That's what lets each agent read only the sections relevant to it.
+- **Identified requests.** Wikimedia asks API clients to send a contact URL; the fetcher always does.
+
+### Building the index: `common/rag/ingest.py`
+
+**What it does.** `python -m common.rag.ingest` turns a list of destinations into a searchable index.
+
+**How it works.**
+1. Reads destinations and their aliases from `data/rag/destinations.txt`.
+2. Fetches each article, using a 30-day local cache and pausing a second between downloads.
+3. Keeps only the sections some agent uses, splits them into passages of about 300 tokens, and gives each passage a stable ID and its metadata: destination, section, source URL, license, and validity dates.
+4. Embeds each passage. Of its metadata, only the destination and section name go into the vector; the URL, license, and dates are stored alongside but don't affect matching.
+5. Hands the passages to the configured store's writer, and saves the alias map.
+
+**Why.**
+- **Ingest ahead of time.** Downloading and embedding thousands of passages takes minutes; doing it once means a trip request only embeds one short query.
+- **Small passages.** A 300-token passage is about one topic, so a match is a precise match, and two of them fit in a prompt without slowing a CPU model much.
+- **Stable IDs** (`paris|Sleep|3`). Re-ingesting replaces a destination's passages instead of duplicating them.
+- **Expiry dates.** Travel advice goes stale; passages are only used for a year after download.
+- **Guardrails.** It refuses to build the Vercel index with Ollama vectors, because Vercel searches with OpenAI vectors and the two can't be compared.
+
+### Shared retrieval settings: `common/rag/store.py`
+
+**What it does.** Holds what both stores share: which sections each agent reads, the topic of each agent's query, destination-name normalization, the embedding model, and the "embedding identity".
+
+**Why the embedding identity.** Vectors from different embedding models, or the same model at different sizes, can't be compared. Every index records the identity that built it (for example `openai:text-embedding-3-small:512`). At load time a mismatch disables retrieval with a clear log line, instead of silently returning nonsense matches.
+
+**Why stores load lazily.** `backend()` imports the Chroma code only if Chroma is selected. Vercel doesn't install Chroma at all, so an eager import would crash every agent there.
+
+### Two vector stores: `chroma_store.py` and `simple_store.py`
+
+**What they do.** Store and search the embedded passages. `RAG_STORE` picks one; both expose the same `load` and `Writer`.
+
+| | Chroma (`chroma`) | LlamaIndex built-in (`simple`) |
+| --- | --- | --- |
+| Used for | Self-hosted runs | Vercel |
+| Storage | A local database folder | Plain JSON files, loaded into memory |
+| Updates | One destination at a time | Rebuilt in full each ingest |
+| Needs write access | Yes | No, only reads at query time |
+| Package weight | Large (Chroma, ONNX runtime) | Part of LlamaIndex |
+
+**Why two.** Chroma is the better fit on a machine you control: it updates in place and doesn't hold everything in memory. But Vercel functions have a read-only filesystem and a bundle size limit that Chroma's dependencies alone exceed. LlamaIndex's built-in store needs neither, and supports every filter retrieval uses, so the lookup code is identical for both. The Vercel index is committed to the repository and ships inside each deployment.
+
+### Looking up guidance: `common/rag/retrieve.py`, `types.py`, `__init__.py`
+
+**What it does.** `retrieve_guidance(agent, destination)` returns a prompt block and its sources, or nothing.
+
+**How it works.**
+1. If retrieval is off, return nothing, without importing LlamaIndex.
+2. On first use, load the index once and keep it; if it's missing or mismatched, remember that and log it once.
+3. Resolve the destination through the alias map. If it isn't indexed, return nothing **without** an embedding call.
+4. Check a small in-memory cache keyed by agent, destination, and day.
+5. Search with a short topical query, such as "where to stay, neighbourhoods, and accommodation in Paris", filtered to that destination, the agent's sections, English, and unexpired passages. Give up after `RAG_TIMEOUT_SECONDS`.
+6. Format the top passages inside `<guidance>` markers, capped in length, and return them with their sources.
+
+**Why.**
+- **It can never break a trip plan.** Every failure (no index, missing packages, unknown city, model mismatch, embedding error, timeout) ends in "no guidance" and a log line. Guidance improves a plan; it's never required for one.
+- **A short query, not the whole prompt.** Dates, budgets, and traveller counts would only add noise to a similarity search.
+- **Skip unknown cities early.** Most of the cost of a lookup is the embedding call; there's no point making it when nothing could match.
+- **Load once, cache per day.** Loading the index is the slowest step (seconds on a cold start), and the same destination is often asked about repeatedly. The day is part of the cache key so expiry still applies.
+- **Untrusted text is fenced in.** Wikivoyage is editable by anyone, so retrieved text is wrapped in markers with an instruction to treat it as reference only, copies of the markers inside it are removed, and its length is capped. That limits what a malicious edit could make the model do.
+- **`types.py` and the lazy `__init__.py`.** The `Guidance` type has no heavy dependencies, so agents can import retrieval even where LlamaIndex isn't installed. If retrieval is turned on but its packages are missing, the agent logs it once and plans without guidance instead of crashing.
+
+## Observability: `common/telemetry.py`
+
+**What it does.** Sends request and model metrics to Grafana Cloud over OpenTelemetry, if `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+
+**Why.**
+- **Opt-in.** Local runs need no Grafana account and send nothing anywhere.
+- **Push, not scrape.** On AWS the tasks scaled to zero nightly and the stack was regularly destroyed, so there was nothing stable for a scraper to reach. Each service pushes its own metrics once a minute instead. See [Observability](/explanation/observability).
+- **Set up once per process.** The metrics provider is global, so it's installed once even though `create_app` may be called more than once in tests.
+
+## The UI: `travel_ui.py`
+
+**What it does.** The Streamlit page: a trip form, a progress status, the three result tables, warnings for missing parts, and the list of sources.
+
+**How it works.** It reads `HOST_SERVICE_URL` and `HOST_API_KEY` from Streamlit secrets, falling back to the environment. On submit, it sends the request in a background thread and updates a status box under the title every half second with the elapsed time, then marks it complete, partial, or failed.
+
+**Why.**
+- **Secrets first, environment second.** The same file runs on Streamlit Cloud, which uses secrets, and locally, which uses `.env`.
+- **A visible timer.** A plan can take one to two minutes on a local model; without feedback, a slow plan looks like a frozen page. The request runs in a thread because Streamlit can only redraw while the main script isn't blocked.
+- **A 180-second limit.** Above the cloud Host's 150-second wait, so the UI never gives up before the Host does.
+- **Sources in a collapsed section.** Attribution is always available without crowding the results.
+
+## Running it locally
+
+### Without Docker: `run.py`
+
+Starts the four agents one at a time, waiting until each is listening before starting the next, then starts the UI, and shuts everything down in reverse on Ctrl+C. **Why:** one command for development, with failures reported at the agent that failed instead of as a vague UI error later. It's also the only entry point that reads `.env` itself.
+
+### With Docker: `compose.yaml` and `Dockerfile`
+
+- **One Dockerfile, two targets.** `api-runtime` for the agents and `ui-runtime` for the UI, so each image installs only what it needs. The agent image is the default target, so a plain `docker build` produces it.
+- **An allowlist `.dockerignore`.** Only code and requirements go into the build, never `.env`, tests, or Terraform's large provider files.
+- **Shared settings, merged explicitly.** YAML merge keys are shallow, so each service merges the shared environment block into its own. An earlier version replaced it instead, and the agents silently lost `OLLAMA_BASE_URL`.
+- **Ollama's address is fixed.** Inside Compose it's always `http://ollama:11434`; `.env`'s `localhost` would point each container at itself.
+- **Ollama keeps two models loaded for 30 minutes.** On a CPU, Ollama otherwise holds one model and reloads on every switch, which made the first lookup after a quiet spell time out.
+- **The index lives in a volume,** built by a one-off `ingest` service and shared by the agents.
+
+## Deployment configuration
+
+### Vercel: `vercel.json`, `.vercelignore`, `requirements/api-*.txt`
+
+- **Four services, one public.** Every public path routes to the Host. Flight, Stay, and Activities have no public route; the Host reaches them through service bindings, whose URLs Vercel injects as the same `*_SERVICE_URL` settings used everywhere else. No code changes were needed.
+- **Different dependencies per service.** The Host installs `api-core.txt`; the agents add LlamaIndex and OpenAI embeddings (`api-vercel.txt`), but not Chroma. Smaller bundles start faster.
+- **Large Functions.** With the index, the agents are just over the 225 MB limit for services with their own install command, so `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` is set.
+- **Uploads are an allowlist in spirit.** `.vercelignore` keeps `.env`, infrastructure, docs, tests, and the local index out of every upload.
+
+See [Cloud design and costs](/explanation/cloud-design-and-costs#vercel).
+
+### AWS (dormant): `infra/aws/`
+
+Two Terraform modules: `foundation`, which is cheap and permanent (network, permissions, image registry), and `ecs-agents`, which is expensive and disposable (load balancer, WAF, services). **Why split:** the costly half can be destroyed between uses and recreated in minutes, because everything slow to recreate lives in the other half. See [Terraform modules](/reference/terraform).
+
+### CI: `.github/workflows/ci.yml`
+
+Runs tests and lint on every push and pull request, then, only on `main` and only while `AWS_ROLE_ARN` exists, pushes the agent image to AWS. **Why:** tests gate every change, including ones Railway or Vercel would deploy on their own. Signing in through GitHub's OIDC means no AWS keys are stored in GitHub, and tying the image push to the AWS stack's lifecycle means it costs nothing while AWS is dormant. See [CI workflow](/reference/ci-workflow).
+
+## Not yet used: `common/travel_data.py`
+
+Adapters for geocoding (Nominatim), places (Overpass), and weather (Open-Meteo) exist and are tested, but no agent calls them, and their settings have no effect. They're kept as the starting point for grounding suggestions in live data, which would be the natural next step after retrieval.

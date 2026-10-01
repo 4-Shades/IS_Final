@@ -59,6 +59,7 @@
         "group": "Explanation",
         "pages": [
           "explanation/architecture",
+          "explanation/components",
           "explanation/llm-providers",
           "explanation/cloud-design-and-costs",
           "explanation/security-model",

@@ -16,19 +16,29 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 - **Pluggable LLM Provider:** Ollama (Meta Llama, self-hosted) or OpenAI `gpt-4o-mini` (cloud), selected by `LLM_PROVIDER`.
 - **Structured Responses:** Requests JSON-schema-constrained output from either provider and validates it against shared Pydantic contracts.
 - **Open Travel Data Adapters:** Nominatim-compatible geocoding, Overpass places, and Open-Meteo weather adapters in `common/travel_data.py`. Not yet wired into any agent, so their flags currently have no effect.
-- **Retrieval-Augmented Generation:** Flight, Stay, and Activities add relevant [Wikivoyage](https://en.wikivoyage.org) passages to their prompts, retrieved with LlamaIndex from a local Chroma index, and trip plans list them as sources. Optional: without an index, planning works as before.
+- **Retrieval-Augmented Generation:** Flight, Stay, and Activities add relevant [Wikivoyage](https://en.wikivoyage.org) passages to their prompts, retrieved with LlamaIndex (from Chroma when self-hosted, or a committed file index on Vercel), and trip plans list them as sources. Optional: without an index, planning works as before.
 - **Containerized Runtime:** One Dockerfile with separate API and UI images, so each installs only the dependencies it needs.
 - **Interactive UI:** User-friendly web interface built with Streamlit.
 - **Microservices:** Each agent runs as an independent service.
 
 ## System Components
-1.  **Host Agent:** The central orchestrator. It calls the other agents and does not use an LLM itself.
-2.  **Flight Agent:** Suggests flight options.
-3.  **Stay Agent:** Suggests accommodation options.
-4.  **Activities Agent:** Recommends local activities.
-5.  **Travel Data Providers:** Shared adapters for geocoding, places, and weather context.
-6.  **RAG Layer:** Filters curated documents by destination, language, access policy, and validity dates.
-7.  **Frontend:** Streamlit application for user interaction.
+
+Each component, what it does, and the main reason it's built that way. The full reasoning, with trade-offs, is in [`docs/explanation/components.mdx`](docs/explanation/components.mdx).
+
+| Component | Code | What it does | Why it's built this way |
+| --- | --- | --- | --- |
+| Host agent | `agents/host_agent/` | Sends each trip to Flight, Stay, and Activities at once and merges their answers, errors, and sources | Running in parallel, a plan takes as long as the slowest agent; a failed part becomes a note in the plan instead of failing it |
+| Flight, Stay, Activities agents | `agents/*_agent/` | Each looks up guidance, asks the model for its part of the plan as JSON, and returns it with sources | Same shape, different prompts and guidance sections; a model failure returns a plain error and the real cause goes to the log |
+| Contracts | `shared/schemas.py` | Pydantic models for every request and response | Every service checks the same rules; responses can't be empty without an explanation; `sources` sits outside the model-facing schema so the model can't invent citations |
+| Settings | `shared/config.py` | Reads all environment variables into one frozen object | The same code runs locally, in Docker, on AWS, and on Vercel, with only the environment changing |
+| Agent app and client | `common/a2a_server.py`, `common/a2a_client.py` | Builds each agent's FastAPI app; the Host's HTTP client for calling agents | One factory gives every agent identical endpoints and an optional constant-time API-key check; the client never raises, so one slow agent can't sink a plan |
+| Language models | `common/llm.py` | Gets schema-valid JSON from Ollama or OpenAI | One interface for both providers; output is constrained by the schema, then validated, because neither step alone is reliable |
+| Retrieval | `common/rag/` | Builds a Wikivoyage index offline; looks up passages per request | Passages are filtered to the agent's own sections; every failure means "no guidance", never an error; two stores because Chroma doesn't fit Vercel |
+| Metrics | `common/telemetry.py` | Optional push of metrics to Grafana Cloud | Off unless configured; pushed rather than scraped because cloud tasks come and go |
+| UI | `travel_ui.py` | Streamlit form, live progress status, results, and sources | A timer shows long local plans are still running; works with Streamlit Cloud secrets or a local `.env` |
+| Local runners | `run.py`, `compose.yaml`, `Dockerfile` | Start everything without Docker, or in containers | One command for development; one image for all four agents, chosen at runtime by `APP_MODULE` |
+| Deployment | `vercel.json`, `infra/aws/`, `.github/workflows/ci.yml` | Vercel services, dormant AWS Terraform, and CI | Only the Host is public on Vercel; on AWS the expensive half is disposable; CI tests every change before any platform deploys it |
+| Travel-data adapters | `common/travel_data.py` | Geocoding, places, and weather clients | Tested but not yet used by any agent; kept for grounding suggestions in live data later |
 
 ## Choose a setup
 
@@ -36,7 +46,7 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 | --- | --- | --- | --- |
 | **Where it runs** | Your machine: Python processes or Docker Compose | Vercel Services (all four agents), Streamlit Community Cloud (UI) | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
 | **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` | OpenAI `gpt-4o-mini` |
-| **Guidance (RAG)** | Yes, once the index is built | Yes, from an index committed to the repository (off until it's built) | No |
+| **Guidance (RAG)** | Yes, once the index is built | Yes, from an index committed to the repository | No |
 | **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | Vercel account (free Hobby plan), Node.js, OpenAI API key with credits | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
 | **Cost** | Free | Free while idle; about $0.001 per trip plan in OpenAI usage | About $50/month while running, a few cents when spun down; plus OpenAI usage and Railway's plan |
 | **Use it for** | Development, testing, offline demos | A public HTTPS URL others can use | Kept for reference; see below |
@@ -152,7 +162,7 @@ The four agents run on [Vercel](https://vercel.com) as Vercel Services defined i
 Setup, in short (full steps in [`docs/how-to/deploy-to-vercel.mdx`](docs/how-to/deploy-to-vercel.mdx)):
 
 1. `npm i -g vercel`, `vercel login`, then `vercel link --yes --project travel-planner` from the repository root. This also connects the project to GitHub, so pushes to `main` deploy.
-2. Set `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, `RAG_STORE=simple`, `RAG_INDEX_DIR=data/rag/vercel`, and `RAG_ENABLED=false` with `vercel env add`. Turn retrieval on after building and committing the index: `python -m common.rag.ingest --store simple --out data/rag/vercel` with an OpenAI key.
+2. Set `LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-4o-mini`, `LLM_TIMEOUT_SECONDS=120`, `DOWNSTREAM_TIMEOUT_SECONDS=150`, `RAG_STORE=simple`, `RAG_INDEX_DIR=data/rag/vercel`, `RAG_ENABLED=true`, and `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` with `vercel env add`. The last is required: with the committed index, each agent is just over the 225 MB limit for services with their own install command. The index in `data/rag/vercel/` is already committed; rebuild it with `python -m common.rag.ingest --store simple --out data/rag/vercel` and an OpenAI key only when the destination list changes.
 3. Add the secrets `OPENAI_API_KEY` and `HOST_API_KEY` **together**: without `HOST_API_KEY` the Host accepts anyone's requests on your OpenAI credits.
 4. Set the Streamlit Cloud secrets `HOST_SERVICE_URL` (the project's production `vercel.app` domain) and `HOST_API_KEY`.
 

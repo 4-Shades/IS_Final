@@ -15,7 +15,14 @@ IS_Final/
 │   ├── a2a_server.py          Builds each agent's FastAPI app, including the API-key check
 │   ├── a2a_client.py          The Host's HTTP client for calling agents
 │   ├── llm.py                 Ollama and OpenAI clients, structured output, LLM metrics
-│   ├── rag/                   Retrieval: Wikivoyage ingest, Chroma index, guidance lookup
+│   ├── rag/                   Retrieval (see Component design for each file's role)
+│   │   ├── wikivoyage.py      Fetch articles and split them into sections
+│   │   ├── ingest.py          Build the index: python -m common.rag.ingest
+│   │   ├── store.py           Agent sections, embedding model and identity, store selection
+│   │   ├── chroma_store.py    Chroma vector store (self-hosted)
+│   │   ├── simple_store.py    LlamaIndex file store, read-only at query time (Vercel)
+│   │   ├── retrieve.py        Look up guidance for a prompt; never fails a request
+│   │   └── types.py           Guidance result type, importable without LlamaIndex
 │   ├── telemetry.py           Optional metrics export over OTLP
 │   ├── travel_data.py         Geocoding, places, and weather adapters (not yet used by agents)
 │   └── serve.py               Container entry point; starts the agent named by APP_MODULE
