@@ -20,3 +20,4 @@ compose.yaml
 Dockerfile
 .dockerignore
 OLLAMA_OPEN_TRAVEL_PLAN.md
+SOFTWARE_DESIGN_DOCUMENT.md
