@@ -46,8 +46,8 @@ Copy only the values, without `export` or the variable name.
 
     It takes effect on the next [spin up](/how-to/spin-aws-up-and-down).
   </Tab>
-  <Tab title="Railway">
-    Add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` as service variables on the Flight service. Railway redeploys it.
+  <Tab title="Flight agent">
+    The Flight agent runs outside the AWS stack. Set `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` in its host's environment, then redeploy it.
   </Tab>
 </Tabs>
 

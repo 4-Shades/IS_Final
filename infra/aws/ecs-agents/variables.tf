@@ -110,7 +110,7 @@ variable "ollama_base_url" {
 
 variable "flight_service_url" {
   type        = string
-  description = "HTTPS URL of the existing Railway Flight agent."
+  description = "HTTPS URL of the Flight agent, which runs outside this stack."
 }
 
 variable "ollama_model" {

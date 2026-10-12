@@ -35,7 +35,7 @@
           "how-to/run-tests",
           "how-to/deploy-to-vercel",
           {
-            "group": "AWS and Railway (dormant)",
+            "group": "AWS (dormant)",
             "pages": [
               "how-to/reactivate-the-cloud",
               "how-to/spin-aws-up-and-down",

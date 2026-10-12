@@ -8,7 +8,7 @@ Structured according to IEEE Std 1016-2009 (IEEE Standard for Information Techno
 | Document version | 1.0.0 |
 | Date | October 5, 2026 |
 | Organization | To be confirmed |
-| Authors | Chaim Joseph Cordova, Psalmantha Allaine Ipong |
+| Authors | Chaim Joseph Cordova |
 | Status | Draft |
 
 ## 1. Introduction
@@ -29,7 +29,7 @@ The software takes a trip request (origin, destination, dates, budget, traveller
 - Structured generation from a language model, either Ollama (self-hosted) or OpenAI (cloud).
 - Retrieval-augmented generation (RAG) from Wikivoyage travel-guide articles.
 - A Streamlit web interface.
-- Three deployment targets: self-hosted, Vercel, and a dormant AWS and Railway deployment.
+- Three deployment targets: self-hosted, Vercel, and a dormant AWS deployment.
 
 **Out of scope**
 
@@ -602,7 +602,7 @@ Docker Compose is the default and costs nothing to run. Vercel is the live cloud
 
 | Item | Design |
 | --- | --- |
-| Services | Host, Stay, and Activities as ECS tasks; Flight ran on Railway and is paused |
+| Services | Host, Stay, and Activities as ECS tasks; Flight ran on a separate host that has been retired |
 | Entry | An application load balancer with a web application firewall and access logs |
 | Infrastructure code | Two Terraform stacks: `foundation` (network, roles, image registries, log bucket, CI role) is kept; `ecs-agents` (tasks, load balancer, firewall, schedules) is destroyed when not in use |
 | Secrets | AWS SSM Parameter Store, read by the tasks at start |

@@ -1,9 +1,9 @@
 ---
 title: "Cloud design and costs"
-description: "The two cloud designs: the dormant AWS and Railway deployment, and Vercel, which replaced it."
+description: "The two cloud designs: the dormant AWS deployment, and Vercel, which replaced it."
 ---
 
-The planner has had two cloud deployments. The first put the agents on AWS and Railway; it worked, but cost about $50 per month whether or not anyone used it, so it's now dormant. The second puts them on Vercel, which costs nothing while idle. Both keep the UI on Streamlit Community Cloud and use OpenAI as the language model.
+The planner has had two cloud deployments. The first put the agents on AWS; it worked, but cost about $50 per month whether or not anyone used it, so it's now dormant. The second puts them on Vercel, which costs nothing while idle. Both keep the UI on Streamlit Community Cloud and use OpenAI as the language model.
 
 ## Vercel
 
@@ -42,9 +42,9 @@ It also fixes the AWS deployment's main security gap: every `vercel.app` address
 - **No metrics export.** The agents send metrics on a timer from a background thread, which may never run in a function that stops when idle, so Grafana export is off here.
 - **The UI isn't on Vercel.** Streamlit needs an always-on WebSocket server, which Vercel functions can't provide.
 
-## AWS and Railway (dormant)
+## AWS (dormant)
 
-This deployment put the Host, Stay, and Activities agents on AWS, the Flight agent on Railway, the UI on Streamlit Community Cloud, and OpenAI as the language model. It's dormant because, even after every cost reduction, it cost more than a coursework project could justify. This section explains the design and the numbers.
+This deployment put the Host, Stay, and Activities agents on AWS, the Flight agent on a separate container host, the UI on Streamlit Community Cloud, and OpenAI as the language model. It's dormant because, even after every cost reduction, it cost more than a coursework project could justify. This section explains the design and the numbers.
 
 ### Layout
 
@@ -57,14 +57,14 @@ flowchart LR
     Host -->|travel.internal| Stay
     Host -->|travel.internal| Activities
   end
-  Host -->|HTTPS| Flight[Flight on Railway]
+  Host -->|HTTPS| Flight[Flight, hosted separately]
   Stay --> OAI[(OpenAI)]
   Activities --> OAI
   Flight --> OAI
 ```
 
 - **Only the Host is public**, through an Application Load Balancer. Stay and Activities have private names in AWS Cloud Map (`stay.travel.internal`, `activities.travel.internal`) that only the Host can reach.
-- **Flight stayed on Railway** because it was deployed there first. The Host reaches it at its Railway HTTPS URL, just like any other agent.
+- **Flight ran outside AWS**, on the container host where it was first deployed. The Host reached it at an HTTPS URL, just like any other agent. That host has since been retired, so reactivating this deployment starts with hosting Flight somewhere.
 - Everything is defined in two Terraform modules; see [Terraform modules](/reference/terraform).
 
 ### Keeping costs down
@@ -99,7 +99,7 @@ Spun down, the foundation costs a few cents a month for stored images.
 
 OpenAI was the cheapest part. Measured on the live stack, Stay and Activities together used about 800 prompt and 300 completion tokens per trip plan, about $0.0003 at `gpt-4o-mini` prices. With Flight, a whole plan costs about $0.001.
 
-Railway's Flight service ran on a trial plan; after the trial it needs a paid plan.
+These figures exclude the Flight agent's separate host.
 
 ### Why it's dormant
 

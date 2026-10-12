@@ -140,7 +140,7 @@ resource "aws_vpc_security_group_egress_rule" "host_to_agents" {
 
 resource "aws_vpc_security_group_egress_rule" "ecs_https" {
   security_group_id = aws_security_group.ecs.id
-  description       = "HTTPS to ECR, CloudWatch Logs, S3, and Railway"
+  description       = "HTTPS to ECR, CloudWatch Logs, S3, and the Flight agent"
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443

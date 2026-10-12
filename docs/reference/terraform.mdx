@@ -68,7 +68,7 @@ Also uses the GitHub provider 6.x, which reads `GITHUB_TOKEN` from the environme
 | --- | --- | --- |
 | `vpc_id`, `task_subnet_ids`, `public_subnet_ids`, `ecs_security_group_id`, `alb_security_group_id`, `execution_role_arn`, `task_role_arn` | required | Foundation outputs. |
 | `image_tag` | `latest` | Image tag to run; CI tags images with the commit's short SHA. |
-| `flight_service_url` | required | Railway Flight HTTPS URL. |
+| `flight_service_url` | required | HTTPS URL of the Flight agent, which runs outside this stack. |
 | `llm_provider` | `openai` | `openai` or `ollama`. |
 | `openai_model` | `gpt-4o-mini` | |
 | `openai_api_key_parameter_arn` | `""` | Required when `llm_provider = "openai"`. |

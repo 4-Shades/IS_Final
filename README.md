@@ -1,6 +1,6 @@
 # ADK-Powered Travel Planner
 
-**Project Proponents:** Chaim Joseph Cordova & Psalmantha Allaine Ipong
+**Project Proponents:** Chaim Joseph Cordova
 
 ## Overview
 The **ADK-Powered Travel Planner** is a multi-agent travel-planning application. A host service coordinates specialist services for flights, stays, and activities, while a Streamlit UI provides the user-facing workflow.
@@ -9,7 +9,7 @@ Generated flights, stays, and activities are illustrative suggestions only; they
 
 **Documentation:** the full docs are a [Mintlify](https://mintlify.com) site in [`docs/`](docs/), organized as tutorials, how-to guides, reference, and explanation. New here? Start with the tutorial, [`docs/tutorials/first-trip-plan.mdx`](docs/tutorials/first-trip-plan.mdx). To browse the site locally, install the CLI (`npm i -g mint`), then run `mint dev` in `docs/` and open `http://localhost:3000`.
 
-**Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. For a public URL, the agents run on [Vercel](#vercel) at no fixed cost. The [AWS and Railway deployment](#cloud-setup-aws-and-railway-dormant) is **dormant**: the AWS stack is spun down, the Railway Flight service is paused, and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
+**Project status:** the [self-hosted setup](#self-hosted-setup) is the supported way to run the project. For a public URL, the agents run on [Vercel](#vercel) at no fixed cost. The [AWS deployment](#cloud-setup-aws-dormant) is **dormant**: the AWS stack is spun down and Grafana Cloud is unused. Its code and infrastructure stay in the repository so it can be [reactivated](#reactivating-the-cloud-deployment).
 
 ## Features
 - **Multi-Agent Architecture:** Orchestrates specialized agents for different travel aspects.
@@ -42,13 +42,13 @@ Each component, what it does, and the main reason it's built that way. The full 
 
 ## Choose a setup
 
-|  | Self-hosted (supported) | Vercel | AWS and Railway (dormant) |
+|  | Self-hosted (supported) | Vercel | AWS (dormant) |
 | --- | --- | --- | --- |
-| **Where it runs** | Your machine: Python processes or Docker Compose | Vercel Services (all four agents), Streamlit Community Cloud (UI) | AWS ECS (Host, Stay, Activities), Railway (Flight), Streamlit Community Cloud (UI) |
+| **Where it runs** | Your machine: Python processes or Docker Compose | Vercel Services (all four agents), Streamlit Community Cloud (UI) | AWS ECS (Host, Stay, Activities), Flight on a separate host, Streamlit Community Cloud (UI) |
 | **LLM** | Ollama, running locally (`llama3.2:3b`) | OpenAI `gpt-4o-mini` | OpenAI `gpt-4o-mini` |
 | **Guidance (RAG)** | Yes, once the index is built | Yes, from an index committed to the repository | No |
-| **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | Vercel account (free Hobby plan), Node.js, OpenAI API key with credits | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, Railway account, OpenAI API key with credits |
-| **Cost** | Free | Free while idle; about $0.001 per trip plan in OpenAI usage | About $50/month while running, a few cents when spun down; plus OpenAI usage and Railway's plan |
+| **Needs** | Python 3.11+, Ollama or Docker Desktop, about 3 GB of disk for models and about 4 GB of free RAM | Vercel account (free Hobby plan), Node.js, OpenAI API key with credits | AWS account, AWS CLI v2, Terraform 1.6+, Docker Desktop, a host for the Flight agent, OpenAI API key with credits |
+| **Cost** | Free | Free while idle; about $0.001 per trip plan in OpenAI usage | About $50/month while running, a few cents when spun down; plus OpenAI usage |
 | **Use it for** | Development, testing, offline demos | A public HTTPS URL others can use | Kept for reference; see below |
 
 All setups share the same code; only configuration differs. You can also mix them, for example running the UI locally against the cloud backend by setting `HOST_SERVICE_URL`.
@@ -146,8 +146,7 @@ Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`. Ollama is then not nee
 
 If your machine can't run the model, host Ollama elsewhere and point `OLLAMA_BASE_URL` at it. Every option needs about 3 GB of persistent disk mounted at `/root/.ollama` and about 4 GB of memory; small or trial plans can't fit this. After the server starts, run `ollama pull llama3.2:3b` in its shell. Keep Ollama private: it has no authentication.
 
-- **Render:** Docker runtime, Dockerfile path `./infra/ollama/Dockerfile`, Docker context `.`, port `11434`, persistent disk at `/root/.ollama`. Use the service's private Render URL as `OLLAMA_BASE_URL`.
-- **Railway:** Dockerfile path `infra/ollama/Dockerfile`, start command `ollama serve`, health check `/api/tags`, port `11434`. Attach a volume at `/root/.ollama` **before** pulling models; without it, the pull fails with `no space left on device` and models are lost on every redeploy.
+- **Any Docker host:** build `infra/ollama/Dockerfile` with the repository root as the Docker context, start it with `ollama serve`, and use `/api/tags` on port `11434` as the health check. Attach the persistent disk at `/root/.ollama` **before** pulling models; without it, the pull fails with `no space left on device` and models are lost on every redeploy. Use the service's private URL as `OLLAMA_BASE_URL`.
 - **Kubernetes:** `infra/kubernetes/ollama.yaml` defines persistent storage, a GPU-targeted deployment, a private `ClusterIP` service, probes, a NetworkPolicy, and a model preload job. It creates no Ingress. Apply it to a cluster with a node labeled `workload=gpu`:
 
   ```bash
@@ -166,9 +165,9 @@ Setup, in short (full steps in [`docs/how-to/deploy-to-vercel.mdx`](docs/how-to/
 3. Add the secrets `OPENAI_API_KEY` and `HOST_API_KEY` **together**: without `HOST_API_KEY` the Host accepts anyone's requests on your OpenAI credits.
 4. Set the Streamlit Cloud secrets `HOST_SERVICE_URL` (the project's production `vercel.app` domain) and `HOST_API_KEY`.
 
-## Cloud setup (AWS and Railway, dormant)
+## Cloud setup (AWS, dormant)
 
-> **Dormant.** Nothing below is currently running. The AWS ECS stack is spun down; the foundation (VPC, ECR images, SSM parameters, GitHub OIDC role) is kept and costs a few cents a month. The Railway Flight service is paused, and Grafana Cloud receives no data. See [Reactivating the cloud deployment](#reactivating-the-cloud-deployment).
+> **Dormant.** Nothing below is currently running. The AWS ECS stack is spun down; the foundation (VPC, ECR images, SSM parameters, GitHub OIDC role) is kept and costs a few cents a month. Grafana Cloud receives no data. See [Reactivating the cloud deployment](#reactivating-the-cloud-deployment).
 
 ### Architecture
 
@@ -177,10 +176,10 @@ Setup, in short (full steps in [`docs/how-to/deploy-to-vercel.mdx`](docs/how-to/
 | Host (public API) | AWS ECS Fargate, behind an Application Load Balancer | None |
 | Stay | AWS ECS Fargate, private Cloud Map DNS | OpenAI `gpt-4o-mini` |
 | Activities | AWS ECS Fargate, private Cloud Map DNS | OpenAI `gpt-4o-mini` |
-| Flight | Railway (`travel-flight` project) | OpenAI `gpt-4o-mini` |
+| Flight | Outside AWS, on any host with an HTTPS URL | OpenAI `gpt-4o-mini` |
 | UI | Streamlit Community Cloud | None |
 
-Request flow: UI → ALB (port 80) → Host (8000) → Stay (8002) and Activities (8003) over Cloud Map, and Flight over its Railway HTTPS URL.
+Request flow: UI → ALB (port 80) → Host (8000) → Stay (8002) and Activities (8003) over Cloud Map, and Flight over its HTTPS URL.
 
 AWS uses two Terraform modules:
 
@@ -200,7 +199,7 @@ AWS uses two Terraform modules:
 
 3. **Push the agent image.** [GitHub Actions](#continuous-integration) builds the root `Dockerfile` and pushes it to the `host`, `stay`, and `activities` ECR repositories on every push to `main`, tagged with the short commit SHA. To push by hand instead, see [Deploy](infra/aws/ecs-agents/README.md#deploy).
 
-4. **Deploy the Flight agent on Railway.** See [Railway Flight agent](#railway-flight-agent) below, and note its HTTPS URL.
+4. **Host the Flight agent outside AWS.** See [Flight agent](#flight-agent) below, and note its HTTPS URL.
 
 5. **Apply the ECS module.** In `infra/aws/ecs-agents`, copy `terraform.tfvars.example` to `terraform.tfvars` and fill in the foundation outputs, the image tag, and the Flight URL (`flight_service_url`). Then plan and apply as in its [README](infra/aws/ecs-agents/README.md#deploy). The public API URL is the `host_public_url` output.
 
@@ -215,13 +214,13 @@ AWS uses two Terraform modules:
 
 If your AWS CLI signs in with `aws login`, run `eval "$(aws configure export-credentials --format env)"` in the same shell before each Terraform command; Terraform can't read those credentials directly.
 
-### Railway Flight agent
+### Flight agent
 
-The Flight agent runs on Railway from this GitHub repository and **redeploys automatically on every push to `main`**. Changes that are only committed locally never reach it; check the deployed commit with `railway status --json`.
+The ECS module runs the Host, Stay, and Activities; it doesn't create a Flight service. Run the Flight agent on any container host that gives it an HTTPS URL, and pass that URL as `flight_service_url`. No such host is set up at the moment, so reactivating this deployment starts with choosing one.
 
-Configure the service in the Railway dashboard. The repository has no Railway config files; a root `railway.toml` is gitignored because Railway would apply it to every service built from this repo.
+Build it from the root `Dockerfile` and configure the service with:
 
-- **Dockerfile path:** `Dockerfile`, set in Settings → Build. This dashboard setting overrides the `RAILWAY_DOCKERFILE_PATH` variable. The default target is the API image.
+- **Dockerfile path:** `Dockerfile`. The default target is the API image.
 - **Start command:** `python -m common.serve`
 - **Health check path:** `/healthz`
 
@@ -245,8 +244,8 @@ GROUND_TRANSPORT_ENABLED=false
 - **Spin down when idle.** The load balancer costs about $24/month whether or not anyone uses it, and it can't be paused. Between uses, destroy and later re-create the ECS module with the [spin down / spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) commands. Everything in `foundation`, the ECR images, and the SSM key are kept, so spinning up needs no rebuild.
 - **The public URL changes on every spin up.** Update `HOST_SERVICE_URL` in the Streamlit Cloud secrets afterwards.
 - **Built-in savings while running:** services only run from 08:00 to 22:00 Asia/Manila time and scale to zero overnight, which also releases their public IPs (adjust with `schedule_start_cron`, `schedule_stop_cron`, `schedule_timezone`). Tasks run on Fargate Spot, about 70% cheaper than regular Fargate.
-- **Railway keeps running when AWS is spun down.** Pause the Flight service in the Railway dashboard to stop its usage too.
-- **Deploying code changes:** push to `main`. Railway redeploys Flight itself; GitHub Actions pushes a new AWS image tagged with the short commit SHA (shown in the run summary). Set that as `image_tag` and apply the ECS module to deploy it.
+- **The Flight agent keeps running when AWS is spun down.** Stop it on its own host to stop its usage too.
+- **Deploying code changes:** push to `main`. GitHub Actions pushes a new AWS image tagged with the short commit SHA (shown in the run summary). Set that as `image_tag` and apply the ECS module to deploy it. Redeploy the Flight agent separately on its own host.
 
 ### Public API security
 
@@ -279,7 +278,7 @@ Setup:
    ```
 
 3. In `infra/aws/ecs-agents/terraform.tfvars`, set `otel_exporter_otlp_endpoint` to the endpoint and `otel_headers_parameter_arn` to the foundation output of the same name. Applies on the next spin up.
-4. For Railway Flight, add `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` as service variables.
+4. For the Flight agent, set `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` in its host's environment.
 
 A ready-made dashboard is in [`infra/grafana/travel-planner-dashboard.json`](infra/grafana/travel-planner-dashboard.json): trip plans served, rejected requests, estimated OpenAI cost, LLM error rate, request and LLM latency (p95), LLM calls by outcome, and tokens used. Import it with **Dashboards → New → Import → Upload dashboard JSON file**, and pick your stack's Prometheus data source (named like `grafanacloud-<stack>-prom`).
 
@@ -294,16 +293,16 @@ sum by (token_type) (increase(llm_token_usage_total[1h]))
 ### Reactivating the cloud deployment
 
 1. **AWS:** spin the ECS module up with the [spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) commands, setting `image_tag` to an image already in ECR (the last tag CI pushed before the spin down). It takes about 10 minutes, gets a new `host_public_url`, and recreates the `AWS_ROLE_ARN` variable so CI resumes pushing images. To deploy code committed while dormant, push to `main` afterwards and apply again with the new tag.
-2. **Railway:** resume the Flight service in the Railway dashboard. If it's still on a trial plan, check the remaining credit first.
+2. **Flight agent:** start it on its host (see [Flight agent](#flight-agent)). If its URL differs from `flight_service_url`, update that variable and apply the ECS module again.
 3. **Streamlit Cloud:** set `HOST_SERVICE_URL` to the new `host_public_url`, and `HOST_API_KEY` to the value in `/travel/host-api-key`.
-4. **Grafana Cloud:** nothing to change. Metrics start arriving as soon as traffic does, as long as the stack still exists. If the trial has ended, confirm the free tier is active, and if the token was deleted, generate a new one and update `/travel/otel-otlp-headers` and the Railway variable.
+4. **Grafana Cloud:** nothing to change. Metrics start arriving as soon as traffic does, as long as the stack still exists. If the trial has ended, confirm the free tier is active, and if the token was deleted, generate a new one and update `/travel/otel-otlp-headers` and the Flight agent's variable.
 5. **Check it:** a `POST /run` without `X-API-Key` should return `401`, and with it a trip plan.
 
 While dormant, GitHub Actions skips the image push: the ECS module deletes the `AWS_ROLE_ARN` repository variable on spin down and recreates it on spin up. Spinning up and down therefore needs a GitHub token in `GITHUB_TOKEN`; see [Spin down / spin up](infra/aws/ecs-agents/README.md#spin-down--spin-up) for the one-time token setup.
 
 ## Configuration
 
-Configuration is loaded from environment variables (`.env` when self-hosted; Terraform, the Railway dashboard, and Streamlit secrets in the cloud).
+Configuration is loaded from environment variables (`.env` when self-hosted; Terraform, Vercel environment variables, and Streamlit secrets in the cloud).
 
 | Variable | Self-hosted | Cloud | Purpose |
 | --- | --- | --- | --- |
@@ -316,15 +315,15 @@ Configuration is loaded from environment variables (`.env` when self-hosted; Ter
 | `RAG_TOP_K` | `2` | `2` | Passages per agent. More passages make CPU-only Ollama slower. |
 | `RAG_INDEX_DIR` | `data/rag/index` | Same | Where the Chroma index lives. |
 | `OPENAI_MODEL` | `gpt-4o-mini` (default) | `gpt-4o-mini` | OpenAI model. |
-| `OPENAI_API_KEY` | Only if using OpenAI | From SSM on AWS; a Railway variable for Flight | OpenAI API key. Never commit it. |
+| `OPENAI_API_KEY` | Only if using OpenAI | From SSM on AWS; an environment variable on Vercel | OpenAI API key. Never commit it. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Same | OpenAI-compatible API endpoint. |
 | `LLM_TIMEOUT_SECONDS` | `90` | `120` | Timeout for a single LLM call. |
-| `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, `ACTIVITIES_SERVICE_URL` | `http://localhost:8001`-`8003` | Railway URL; `http://stay.travel.internal:8002`, `http://activities.travel.internal:8003` (set by Terraform) | Specialist agent URLs used by the Host. |
+| `FLIGHT_SERVICE_URL`, `STAY_SERVICE_URL`, `ACTIVITIES_SERVICE_URL` | `http://localhost:8001`-`8003` | Vercel: injected by service bindings. AWS: the Flight agent's HTTPS URL; `http://stay.travel.internal:8002`, `http://activities.travel.internal:8003` (set by Terraform) | Specialist agent URLs used by the Host. |
 | `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | `150` | How long the Host waits for each specialist agent. |
 | `HOST_SERVICE_URL` | `http://localhost:8000` | The `host_public_url` output | Where the UI sends requests. |
 | `HOST_API_KEY` | Unset (Host is open) | From SSM on AWS; a Streamlit secret for the UI | Key the Host requires as `X-API-Key` on `POST /run`, and that the UI sends. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Unset (metrics off) | Grafana Cloud OTLP endpoint | Where agents push metrics. |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Unset | From SSM on AWS; a Railway variable for Flight | Grafana Cloud auth header. Contains a token; never commit it. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Unset | From SSM on AWS | Grafana Cloud auth header. Contains a token; never commit it. |
 | `OPEN_TRAVEL_DATA_ENABLED`, `WEATHER_PROVIDER_ENABLED`, `PLACES_PROVIDER_ENABLED`, `GROUND_TRANSPORT_ENABLED` | `false` | `false` | Rollout flags for the open travel-data providers. No agent reads them yet. |
 
 Do not commit `.env` or API keys. Use `.env.example` as the starting template.
@@ -373,7 +372,7 @@ IS_Final/
 │   ├── ui.txt              # Streamlit runtime
 │   └── dev.txt             # api + ui + test and lint tools
 ├── requirements.txt        # Streamlit Cloud entry point (-r requirements/ui.txt)
-├── Dockerfile              # api-runtime (default) and ui-runtime targets; used by Compose, ECS, Railway
+├── Dockerfile              # api-runtime (default) and ui-runtime targets; used by Compose and ECS
 ├── compose.yaml            # Self-hosted containerized stack
 ├── vercel.json             # Vercel Services: four agents, only the Host public
 ├── run.py                  # Self-hosted: starts all agents and the UI without Docker

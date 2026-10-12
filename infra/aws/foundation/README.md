@@ -22,7 +22,7 @@ Use the outputs as inputs to `../ecs-agents`. The foundation module must be appl
 
 ## Cost note
 
-There is no NAT gateway. ECS tasks run in the public subnets with public IPs and reach ECR, CloudWatch Logs, and Railway through the internet gateway. Each public IPv4 address is billed hourly, which is far cheaper than a NAT gateway.
+There is no NAT gateway. ECS tasks run in the public subnets with public IPs and reach ECR, CloudWatch Logs, and the Flight agent through the internet gateway. Each public IPv4 address is billed hourly, which is far cheaper than a NAT gateway.
 
 ## Security note
 

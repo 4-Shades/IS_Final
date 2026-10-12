@@ -1,17 +1,12 @@
 ---
 title: "Deploy code changes to the cloud"
-description: "Get a new commit running on Railway and AWS."
+description: "Get a new commit running on AWS."
 ---
 
-Railway and AWS pick up new code differently.
-
-| | How it deploys | What you do |
-| --- | --- | --- |
-| **Railway (Flight)** | Rebuilds automatically on every push to `main`. | Push to `main`. |
-| **AWS (Host, Stay, Activities)** | CI builds an image, but deploying it is manual. | Push, then apply Terraform with the new image tag. |
+CI builds an image for the Host, Stay, and Activities on every push to `main`, but deploying it is manual: you apply Terraform with the new image tag.
 
 <Warning>
-Commits that aren't pushed to GitHub never reach either platform. Both build from the `4-Shades/IS_Final` repository on GitHub, not from your machine.
+Commits that aren't pushed to GitHub never reach AWS. CI builds from the `4-Shades/IS_Final` repository on GitHub, not from your machine.
 </Warning>
 
 ## Deploy to AWS
@@ -41,12 +36,6 @@ This only works while the stack is up, because CI pushes images only then (see [
   </Step>
 </Steps>
 
-## Check which commit Railway runs
+## The Flight agent
 
-With the Railway CLI linked to the `travel-flight` project:
-
-```bash
-railway status --json
-```
-
-The active deployment's `meta.commitHash` is the commit it built.
+The Flight agent runs outside the AWS stack, so none of the steps above update it. Redeploy it on its own host from the same commit.

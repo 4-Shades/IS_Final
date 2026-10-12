@@ -14,25 +14,19 @@ Ollama has no authentication. Keep it on a private network, and never expose por
 ## Choose a host
 
 <Tabs>
-  <Tab title="Render">
-    Create a private service with:
-
-    - **Runtime:** Docker
-    - **Dockerfile path:** `./infra/ollama/Dockerfile`
-    - **Docker context:** `.`
-    - **Port:** `11434`
-    - **Persistent disk mount:** `/root/.ollama`
-
-    Use the service's private Render URL as `OLLAMA_BASE_URL`.
-  </Tab>
-  <Tab title="Railway">
-    In the service settings, set:
+  <Tab title="Docker host">
+    On any service that runs a Docker image, create a private service with:
 
     - **Dockerfile path:** `infra/ollama/Dockerfile`
+    - **Docker context:** `.` (the repository root)
     - **Start command:** `ollama serve`
+    - **Port:** `11434`
     - **Health check path:** `/api/tags`
+    - **Persistent disk mount:** `/root/.ollama`
 
-    Attach a volume at `/root/.ollama` **before** downloading models. Without it, the download fails with `no space left on device`, and models are lost on every redeploy.
+    Attach the disk **before** downloading models. Without it, the download fails with `no space left on device`, and models are lost on every redeploy.
+
+    Use the service's private URL as `OLLAMA_BASE_URL`.
   </Tab>
   <Tab title="Kubernetes">
     `infra/kubernetes/ollama.yaml` defines persistent storage, a GPU deployment, a private `ClusterIP` service, health probes, a NetworkPolicy, and a job that downloads the models. It creates no Ingress. Apply it to a cluster with a node labeled `workload=gpu`:

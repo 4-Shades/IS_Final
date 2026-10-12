@@ -2,10 +2,8 @@
 #
 # Targets:
 #   api-runtime (default)  FastAPI host and specialist agents; APP_MODULE selects the agent.
-#                          Used by Compose, AWS ECS, and Railway.
+#                          Used by Compose and AWS ECS.
 #   ui-runtime             Streamlit frontend.
-#
-# No pip cache mounts: Railway's builder rejects cache mounts without its own id prefix.
 
 FROM python:3.11-slim AS base
 

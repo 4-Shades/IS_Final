@@ -9,7 +9,7 @@ All settings are environment variables, read in `shared/config.py`. There are no
 
 - **Self-hosted:** `.env` in the repository root, copied from `.env.example`. `run.py` and Docker Compose load it. Plain `uvicorn` needs `--env-file .env`, and `streamlit run` doesn't read it.
 - **AWS:** the ECS task definitions set by Terraform, with secrets read from SSM Parameter Store when a task starts.
-- **Railway:** the Flight service's variables in the Railway dashboard.
+- **Vercel:** the project's environment variables, set with `vercel env add`.
 - **Streamlit Cloud:** the app's secrets, for the UI only.
 
 ## Language model
@@ -22,7 +22,7 @@ All settings are environment variables, read in `shared/config.py`. There are no
 | `OLLAMA_MODEL` | `llama3.2:3b` | not set | Model used to generate suggestions. |
 | `OLLAMA_EMBEDDING_MODEL` | `embeddinggemma` | not set | Embeds guidance passages and queries when `LLM_PROVIDER=ollama`. See [Retrieval](#retrieval). |
 | `OPENAI_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` | OpenAI model. |
-| `OPENAI_API_KEY` | none | SSM `/travel/openai-api-key` (Stay, Activities); Railway variable (Flight) | Required when `LLM_PROVIDER=openai`. Secret. |
+| `OPENAI_API_KEY` | none | SSM `/travel/openai-api-key` (Stay, Activities); the Flight host's environment | Required when `LLM_PROVIDER=openai`. Secret. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | same | Any OpenAI-compatible Chat Completions endpoint. |
 
 ## Retrieval
@@ -48,7 +48,7 @@ The ingest command, `python -m common.rag.ingest`, also takes `--store` and `--o
 
 | Variable | Default | Cloud value | Description |
 | --- | --- | --- | --- |
-| `FLIGHT_SERVICE_URL` | `http://localhost:8001` | Railway Flight URL | Read by the Host. |
+| `FLIGHT_SERVICE_URL` | `http://localhost:8001` | The Flight agent's HTTPS URL | Read by the Host. |
 | `STAY_SERVICE_URL` | `http://localhost:8002` | `http://stay.travel.internal:8002` | Read by the Host. |
 | `ACTIVITIES_SERVICE_URL` | `http://localhost:8003` | `http://activities.travel.internal:8003` | Read by the Host. |
 | `DOWNSTREAM_TIMEOUT_SECONDS` | `30` | `150` | How long the Host waits for each agent. Keep it above `LLM_TIMEOUT_SECONDS`. |

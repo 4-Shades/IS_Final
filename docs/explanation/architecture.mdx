@@ -38,7 +38,7 @@ The two messages tell you which side failed; see [Fix "temporarily unavailable" 
 Running each agent as its own process costs some complexity: four processes instead of one, and network calls between them. In return:
 
 - **They run in parallel.** The slowest part of a plan is waiting for the model. Three agents waiting at once take about as long as the slowest one, not the sum of all three.
-- **They deploy independently.** In the cloud setup, Flight ran on Railway while the other three ran on AWS. Nothing in the code had to know that; the Host just calls three URLs.
+- **They deploy independently.** In the AWS setup, Flight ran on a different platform from the other three. Nothing in the code had to know that; the Host just calls three URLs.
 - **They fail independently.** A crash in one agent doesn't take down the others.
 
 ## One image, four agents

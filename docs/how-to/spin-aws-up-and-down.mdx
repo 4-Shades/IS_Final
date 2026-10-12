@@ -30,7 +30,7 @@ terraform apply down.tfplan
 
 The plan should say `0 to add, 0 to change, 30 to destroy`: the load balancer, WAF, ECS cluster and services, Cloud Map namespace, log groups, schedules, and the GitHub variable. It takes 2 to 5 minutes. Log history in CloudWatch is deleted with the log groups.
 
-Railway is separate. Pause the Flight service in the Railway dashboard to stop its usage too.
+The Flight agent runs outside this stack. Stop it on its own host to stop its usage too.
 
 ## Spin up
 

@@ -7,7 +7,7 @@ This module deploys the Host, Stay, and Activities FastAPI services to ECS Farga
 - Terraform >= 1.6, AWS CLI v2, and Docker
 - `../foundation` applied, with its outputs copied into `terraform.tfvars`
 - The OpenAI key stored in SSM (see [LLM provider](#llm-provider)), and the Host API key stored at `/travel/host-api-key` (see the root README's [Public API security](../../../README.md#public-api-security)); tasks can't start if either parameter is missing
-- The Railway Flight agent's HTTPS URL for `flight_service_url`
+- The HTTPS URL of the Flight agent, which runs outside this stack, for `flight_service_url`
 
 ## Deploy
 
@@ -39,7 +39,7 @@ Use the Terraform outputs in the host service:
 ```env
 STAY_SERVICE_URL=http://stay.travel.internal:8002
 ACTIVITIES_SERVICE_URL=http://activities.travel.internal:8003
-FLIGHT_SERVICE_URL=https://<railway-flight-domain>
+FLIGHT_SERVICE_URL=https://<flight-agent-domain>
 ```
 
 ## LLM provider
@@ -60,8 +60,8 @@ The public Host API URL is returned as `host_public_url`. The initial Terraform 
 
 - ALB security group: inbound TCP 80 from the internet; outbound TCP 8000 to the ECS security group only.
 - ECS security group: inbound TCP 8000 from the ALB, and TCP 8002-8003 from itself (Host to Stay and Activities).
-- ECS security group: outbound TCP 443 (ECR, CloudWatch Logs, S3, OpenAI, Railway Flight) and TCP 8002-8003 to itself.
-- Tasks run in public subnets with `assign_public_ip = true` to pull images, send logs, and reach Railway. The ECS security group allows no inbound traffic from the internet.
+- ECS security group: outbound TCP 443 (ECR, CloudWatch Logs, S3, OpenAI, the Flight agent) and TCP 8002-8003 to itself.
+- Tasks run in public subnets with `assign_public_ip = true` to pull images, send logs, and reach the Flight agent. The ECS security group allows no inbound traffic from the internet.
 
 Security group rules are owned by `../foundation`; this module only attaches the groups.
 
@@ -112,4 +112,4 @@ Because CI stops pushing images while the stack is down, `image_tag` must name a
 
 Spinning down keeps everything in `../foundation` (VPC, subnets, security groups, IAM roles, ECR images) and the SSM parameters, none of which cost anything except a few cents of ECR storage. Log history in CloudWatch is deleted with the log groups.
 
-The Railway Flight service is separate and keeps running; pause it in the Railway dashboard if you also want to stop its usage.
+The Flight agent runs outside this stack and keeps running; stop it on its own host if you also want to stop its usage.

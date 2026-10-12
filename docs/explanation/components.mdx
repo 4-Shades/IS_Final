@@ -252,7 +252,7 @@ Two Terraform modules: `foundation`, which is cheap and permanent (network, perm
 
 ### CI: `.github/workflows/ci.yml`
 
-Runs tests and lint on every push and pull request, then, only on `main` and only while `AWS_ROLE_ARN` exists, pushes the agent image to AWS. **Why:** tests gate every change, including ones Railway or Vercel would deploy on their own. Signing in through GitHub's OIDC means no AWS keys are stored in GitHub, and tying the image push to the AWS stack's lifecycle means it costs nothing while AWS is dormant. See [CI workflow](/reference/ci-workflow).
+Runs tests and lint on every push and pull request, then, only on `main` and only while `AWS_ROLE_ARN` exists, pushes the agent image to AWS. **Why:** tests gate every change, including ones Vercel would deploy on its own. Signing in through GitHub's OIDC means no AWS keys are stored in GitHub, and tying the image push to the AWS stack's lifecycle means it costs nothing while AWS is dormant. See [CI workflow](/reference/ci-workflow).
 
 ## Not yet used: `common/travel_data.py`
 
